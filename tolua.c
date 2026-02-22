@@ -35,6 +35,9 @@ SOFTWARE.
 #include "lualib.h"
 #include "lauxlib.h"
 #include "tolua.h"
+#if defined(LUAJIT_VERSION)
+#include "lj_bc.h"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -271,9 +274,156 @@ LUA_API int32_t tolua_tointeger(lua_State *L, int idx)
     return (int32_t)lua_tointeger(L, idx);
 }
 
+#if defined(LUAJIT_VERSION)
+#define TOLUA_BCDUMP_HEAD1 0x1b
+#define TOLUA_BCDUMP_HEAD2 0x4c
+#define TOLUA_BCDUMP_HEAD3 0x4a
+#define TOLUA_BCDUMP_VERSION 2
+#define TOLUA_BCDUMP_F_BE 0x01
+#define TOLUA_BCDUMP_F_STRIP 0x02
+#define TOLUA_BCDUMP_F_FR2 0x08
+
+/* uLua (LuaJIT 2.0 based) -> standard LuaJIT 2.1 opcode mapping. */
+static const uint8_t tolua_ulua_bc_map[] = {
+  BC_ISLT, BC_ISGE, BC_ISLE, BC_ISGT, BC_ISEQV, BC_ISNEV, BC_ISEQS, BC_ISNES,
+  BC_ISEQN, BC_ISNEN, BC_ISEQP, BC_ISNEP, BC_ISTC, BC_ISFC, BC_IST, BC_ISF,
+  BC_MOV, BC_NOT, BC_UNM, BC_LEN,
+  BC_ADDVN, BC_SUBVN, BC_MULVN, BC_DIVVN, BC_MODVN,
+  BC_ADDNV, BC_SUBNV, BC_MULNV, BC_DIVNV, BC_MODNV,
+  BC_ADDVV, BC_SUBVV, BC_MULVV, BC_DIVVV, BC_MODVV,
+  BC_POW, BC_CAT, BC_KSTR, BC_KCDATA, BC_KSHORT, BC_KNUM, BC_KPRI, BC_KNIL,
+  BC_UGET, BC_USETV, BC_USETS, BC_USETN, BC_USETP, BC_UCLO, BC_FNEW, BC_TNEW,
+  BC_TDUP, BC_GGET, BC_GSET, BC_TGETV, BC_TGETS, BC_TGETB,
+  BC_TSETV, BC_TSETS, BC_TSETB, BC_TSETM,
+  BC_CALLM, BC_CALL, BC_CALLMT, BC_CALLT, BC_ITERC, BC_ITERN, BC_VARG, BC_ISNEXT,
+  BC_RETM, BC_RET, BC_RET0, BC_RET1, BC_FORI, BC_JFORI, BC_FORL, BC_IFORL,
+  BC_JFORL, BC_ITERL, BC_IITERL, BC_JITERL, BC_LOOP, BC_ILOOP, BC_JLOOP, BC_JMP,
+  BC_FUNCF, BC_IFUNCF, BC_JFUNCF, BC_FUNCV, BC_IFUNCV, BC_JFUNCV, BC_FUNCC, BC_FUNCCW
+};
+
+static int tolua_read_uleb128(const uint8_t *buf, size_t len, size_t *pos, uint32_t *out)
+{
+  uint32_t v = 0;
+  uint32_t shift = 0;
+
+  while (*pos < len) {
+    uint8_t b = buf[(*pos)++];
+    v |= (uint32_t)(b & 0x7f) << shift;
+    if ((b & 0x80) == 0) {
+      *out = v;
+      return 1;
+    }
+    shift += 7;
+    if (shift > 28) return 0;
+  }
+  return 0;
+}
+
+static int tolua_remap_legacy_bytecode(uint8_t *buf, size_t len)
+{
+  size_t pos = 0;
+  uint32_t flags = 0;
+  int be = 0;
+  int strip = 0;
+
+  if (len < 5) return 0;
+  if (buf[0] != TOLUA_BCDUMP_HEAD1 || buf[1] != TOLUA_BCDUMP_HEAD2 || buf[2] != TOLUA_BCDUMP_HEAD3) return 0;
+  if (buf[3] != 1) return 0;
+
+  pos = 4;
+  if (!tolua_read_uleb128(buf, len, &pos, &flags)) return 0;
+
+  be = (flags & TOLUA_BCDUMP_F_BE) ? 1 : 0;
+  strip = (flags & TOLUA_BCDUMP_F_STRIP) ? 1 : 0;
+
+  /* x86 bytecode should not carry FR2; keep behavior explicit. */
+  if (flags & TOLUA_BCDUMP_F_FR2) return 0;
+
+  if (!strip) {
+    uint32_t name_len = 0;
+    if (!tolua_read_uleb128(buf, len, &pos, &name_len)) return 0;
+    if ((size_t)name_len > len - pos) return 0;
+    pos += (size_t)name_len;
+  }
+
+  for (;;) {
+    uint32_t proto_len = 0;
+    size_t p = 0;
+    size_t proto_end = 0;
+    size_t bc_pos = 0;
+    uint32_t numkgc = 0, numkn = 0, numbc = 0;
+    uint32_t sizedbg = 0;
+    size_t i = 0;
+
+    if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) return 0;
+    if (proto_len == 0) break;
+    if ((size_t)proto_len > len - pos) return 0;
+
+    p = pos;
+    proto_end = pos + (size_t)proto_len;
+    if (p + 4 > proto_end) return 0;
+    p += 4; /* pflags, params, framesize, uv */
+
+    if (!tolua_read_uleb128(buf, len, &p, &numkgc)) return 0;
+    if (!tolua_read_uleb128(buf, len, &p, &numkn)) return 0;
+    if (!tolua_read_uleb128(buf, len, &p, &numbc)) return 0;
+    if (p > proto_end) return 0;
+    (void)numkgc;
+    (void)numkn;
+
+    if (!strip) {
+      if (!tolua_read_uleb128(buf, len, &p, &sizedbg)) return 0;
+      if (sizedbg) {
+        uint32_t firstline = 0, numline = 0;
+        if (!tolua_read_uleb128(buf, len, &p, &firstline)) return 0;
+        if (!tolua_read_uleb128(buf, len, &p, &numline)) return 0;
+      }
+      if (p > proto_end) return 0;
+    }
+
+    bc_pos = p;
+    if ((size_t)numbc > (proto_end - bc_pos) / 4) return 0;
+
+    for (i = 0; i < (size_t)numbc; i++) {
+      uint8_t *ins = buf + bc_pos + i * 4;
+      uint8_t op = be ? ins[3] : ins[0];
+      if (op < sizeof(tolua_ulua_bc_map)) {
+        uint8_t mapped = tolua_ulua_bc_map[op];
+        if (be) ins[3] = mapped;
+        else ins[0] = mapped;
+      }
+    }
+
+    pos = proto_end;
+  }
+
+  /* Upgrade header after remap, so stock LuaJIT 2.1 can load it. */
+  buf[3] = TOLUA_BCDUMP_VERSION;
+  return 1;
+}
+#endif
+
 LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const char *name)
 {
-    return luaL_loadbuffer(L, buff, (size_t)sz, name);
+    int status = luaL_loadbuffer(L, buff, (size_t)sz, name);
+#if defined(LUAJIT_VERSION)
+    if (status == LUA_ERRSYNTAX && sizeof(void*) == 4 && buff != NULL && sz > 4 &&
+        (uint8_t)buff[0] == TOLUA_BCDUMP_HEAD1 &&
+        (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
+        (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3 &&
+        (uint8_t)buff[3] == 1) {
+      uint8_t *patched = (uint8_t *)malloc((size_t)sz);
+      if (patched != NULL) {
+        memcpy(patched, buff, (size_t)sz);
+        if (tolua_remap_legacy_bytecode(patched, (size_t)sz)) {
+          lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
+          status = luaL_loadbuffer(L, (const char *)patched, (size_t)sz, name);
+        }
+        free(patched);
+      }
+    }
+#endif
+    return status;
 }
 
 static int _lua_getfield(lua_State *L)
@@ -2743,3 +2893,23 @@ LUALIB_API int tolua_where (lua_State *L, int level)
     lua_pushliteral(L, "");
     return -1;
 }
+
+/*---------------------------luanet compatibility exports--------------------------------*/
+LUALIB_API void* luanet_gettag() { return tolua_tag(); }
+LUALIB_API int luanet_tonetobject(lua_State *L, int index) { return tolua_rawnetobj(L, index); }
+LUALIB_API void luanet_newudata(lua_State *L, int val) { tolua_newudata(L, val); }
+LUALIB_API int luanet_rawnetobj(lua_State *L, int index) { return tolua_rawnetobj(L, index); }
+
+LUALIB_API int luanet_checkudata(lua_State *L, int index, const char *type) { 
+    int* udata = (int*)lua_touserdata(L, index);
+    if (udata != NULL && lua_getmetatable(L, index)) {
+        lua_getfield(L, LUA_REGISTRYINDEX, type);
+        if (lua_rawequal(L, -1, -2)) {
+            lua_pop(L, 2);
+            return *udata;
+        }
+        lua_pop(L, 2);
+    }
+    return -1;
+}
+

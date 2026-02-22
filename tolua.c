@@ -407,7 +407,7 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
 {
     int status = luaL_loadbuffer(L, buff, (size_t)sz, name);
 #if defined(LUAJIT_VERSION)
-    if (status == LUA_ERRSYNTAX && sizeof(void*) == 4 && buff != NULL && sz > 4 &&
+    if (status == LUA_ERRSYNTAX && (LJ_FR2 == 0) && buff != NULL && sz > 4 &&
         (uint8_t)buff[0] == TOLUA_BCDUMP_HEAD1 &&
         (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
         (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3 &&

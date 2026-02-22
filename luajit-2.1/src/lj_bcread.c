@@ -22,6 +22,7 @@
 #include "lj_bcdump.h"
 #include "lj_state.h"
 #include "lj_strfmt.h"
+#include "lj_bc_remap.h"
 
 /* Reuse some lexer fields for our own purposes. */
 #define bcread_flags(ls)	ls->level
@@ -288,6 +289,16 @@ static void bcread_bytecode(LexState *ls, GCproto *pt, MSize sizebc)
     MSize i;
     for (i = 1; i < sizebc; i++) bc[i] = lj_bswap(bc[i]);
   }
+  /* Remap opcodes for Version 1 (uLua) bytecode. */
+  if ((bcread_flags(ls) & BCDUMP_F_V1)) {
+    MSize i;
+    for (i = 1; i < sizebc; i++) {
+      BCOp op = bc_op(bc[i]);
+      if (op < sizeof(ulua_bc_map)) {
+	bc[i] = (bc[i] & ~0xff) | ulua_bc_map[op];
+      }
+    }
+  }
 }
 
 /* Read upvalue refs. */
@@ -387,12 +398,14 @@ GCproto *lj_bcread_proto(LexState *ls)
 /* Read and check header of bytecode dump. */
 static int bcread_header(LexState *ls)
 {
-  uint32_t flags;
+  uint32_t flags, version;
   bcread_want(ls, 3+5+5);
   if (bcread_byte(ls) != BCDUMP_HEAD2 ||
-      bcread_byte(ls) != BCDUMP_HEAD3 ||
-      bcread_byte(ls) != BCDUMP_VERSION) return 0;
+      bcread_byte(ls) != BCDUMP_HEAD3) return 0;
+  version = bcread_byte(ls);
+  if (version != BCDUMP_VERSION && version != 1) return 0;
   bcread_flags(ls) = flags = bcread_uleb128(ls);
+  if (version == 1) bcread_flags(ls) |= BCDUMP_F_V1;
   if ((flags & ~(BCDUMP_F_KNOWN)) != 0) return 0;
   if ((flags & BCDUMP_F_FR2) != LJ_FR2*BCDUMP_F_FR2) return 0;
   if ((flags & BCDUMP_F_FFI)) {

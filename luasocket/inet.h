@@ -23,7 +23,7 @@
 #endif
 
 #ifdef __MINGW32__
-#define LUASOCKET_INET_PTON
+/* MinGW-w64 provides inet_ntop and inet_pton in ws2tcpip.h */
 #endif
 
 int inet_open(lua_State *L);

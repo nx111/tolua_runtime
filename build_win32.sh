@@ -3,15 +3,15 @@
 mkdir -p window/x86
 
 cd luajit-2.1
-mingw32-make clean
+make clean
 
-mingw32-make BUILDMODE=static CC="gcc -m32 -O2"
+make BUILDMODE=static HOST_CC="gcc -m32" CROSS=i686-w64-mingw32- TARGET_SYS=Windows
 cp src/libluajit.a ../window/x86/libluajit.a
-mingw32-make clean
+# make clean
 
 cd ..
 
-gcc -m32 -O2 -std=gnu99 -shared \
+i686-w64-mingw32-gcc -m32 -O2 -std=gnu99 -shared \
 	int64.c \
 	uint64.c \
 	tolua.c \

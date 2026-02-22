@@ -45,6 +45,7 @@
 #define BCDUMP_F_FR2		0x08
 
 #define BCDUMP_F_KNOWN		(BCDUMP_F_FR2*2-1)
+#define BCDUMP_F_V1		0x80	/* Internal flag for Version 1 (uLua) bytecode */
 
 /* Type codes for the GC constants of a prototype. Plus length for strings. */
 enum {

@@ -375,7 +375,8 @@ void emit_lib(BuildCtx *ctx)
     modstate = 0;
     regfunc = REGFUNC_OK;
     while (fgets(buf, sizeof(buf), fp) != NULL) {
-      char *p;
+      char *p = strpbrk(buf, "\r\n");
+      if (p) { *p = '\n'; p[1] = '\0'; }
       /* Simplistic pre-processor. Only handles top-level #if/#endif. */
       if (buf[0] == '#' && buf[1] == 'i' && buf[2] == 'f') {
 	int ok = 1;
@@ -405,7 +406,6 @@ void emit_lib(BuildCtx *ctx)
 	  if (!strncmp(p, ldh->suffix, len)) {
 	    p += len;
 	    n = ldh->stop ? strcspn(p, ldh->stop) : 0;
-	    if (!p[n]) break;
 	    p[n] = '\0';
 	    ldh->func(ctx, p, ldh->arg);
 	    p += n+1;

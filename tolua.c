@@ -616,6 +616,109 @@ static bool _preload(lua_State *L)
     return false;
 }
 
+/* uLua compatibility: when key lookup misses, try toggling only first-letter case. */
+static int tolua_absindex_compat(lua_State *L, int idx)
+{
+    if (idx > 0 || idx <= LUA_REGISTRYINDEX)
+    {
+        return idx;
+    }
+
+    return lua_gettop(L) + idx + 1;
+}
+
+static int tolua_push_firstcase_alias_key(lua_State *L, int keyIndex)
+{
+    size_t len = 0;
+    const char* key = NULL;
+    char* buf = NULL;
+    char stackBuf[128];
+    unsigned char first;
+
+    if (lua_type(L, keyIndex) != LUA_TSTRING)
+    {
+        return 0;
+    }
+
+    key = lua_tolstring(L, keyIndex, &len);
+
+    if (key == NULL || len == 0)
+    {
+        return 0;
+    }
+
+    first = (unsigned char)key[0];
+
+    if (first >= 'a' && first <= 'z')
+    {
+        first = (unsigned char)(first - ('a' - 'A'));
+    }
+    else if (first >= 'A' && first <= 'Z')
+    {
+        first = (unsigned char)(first + ('a' - 'A'));
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (len + 1 <= sizeof(stackBuf))
+    {
+        buf = stackBuf;
+    }
+    else
+    {
+        buf = (char*)malloc(len + 1);
+
+        if (buf == NULL)
+        {
+            return 0;
+        }
+    }
+
+    memcpy(buf, key, len);
+    buf[0] = (char)first;
+    buf[len] = '\0';
+    lua_pushlstring(L, buf, len);
+
+    if (buf != stackBuf)
+    {
+        free(buf);
+    }
+
+    return 1;
+}
+
+static int tolua_rawget_with_firstcase_alias(lua_State *L, int tableIndex, int keyIndex)
+{
+    int absTable = tolua_absindex_compat(L, tableIndex);
+
+    lua_pushvalue(L, keyIndex);
+    lua_rawget(L, absTable);
+
+    if (!lua_isnil(L, -1))
+    {
+        return 1;
+    }
+
+    lua_pop(L, 1);
+
+    if (!tolua_push_firstcase_alias_key(L, keyIndex))
+    {
+        return 0;
+    }
+
+    lua_rawget(L, absTable);
+
+    if (!lua_isnil(L, -1))
+    {
+        return 1;
+    }
+
+    lua_pop(L, 1);
+    return 0;
+}
+
 static int class_index_event(lua_State *L)
 {
 	int t = lua_type(L, 1);
@@ -688,28 +791,26 @@ static int class_index_event(lua_State *L)
 			}
 			else
         	{
-        		lua_pushvalue(L, 2);			    // stack: obj key mt key
-        		lua_rawget(L, -2);					// stack: obj key mt value        
-
-        		if (!lua_isnil(L, -1))
+        		if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         		{
         	    	return 1;
         		}
                 
-                lua_pop(L, 1);
 				lua_pushlightuserdata(L, &gettag);        	
         		lua_rawget(L, -2);					//stack: obj key mt tget
 
         		if (lua_istable(L, -1))
         		{
-        	    	lua_pushvalue(L, 2);			//stack: obj key mt tget key
-        	    	lua_rawget(L, -2);           	//stack: obj key mt tget value 
-
-        	    	if (lua_isfunction(L, -1))
+        	    	if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         	    	{
-        	        	lua_pushvalue(L, 1);
-        	        	lua_call(L, 1, 1);
-        	        	return 1;
+        	        	if (lua_isfunction(L, -1))
+                        {
+                            lua_pushvalue(L, 1);
+                            lua_call(L, 1, 1);
+                            return 1;
+                        }
+
+                        lua_pop(L, 1);
         	    	}                    
         		}
     		}
@@ -738,10 +839,7 @@ static int class_index_event(lua_State *L)
     	{
         	lua_remove(L, -2);						// stack: obj key mt
 
-        	lua_pushvalue(L, 2);			    	// stack: obj key mt key
-        	lua_rawget(L, -2);						// stack: obj key mt value        
-
-        	if (!lua_isnil(L, -1))
+        	if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         	{
         		if (lua_isfunction(L, -1))			//cache static function
         		{
@@ -753,20 +851,21 @@ static int class_index_event(lua_State *L)
         	    return 1;
         	}        	
         	
-            lua_pop(L, 1);        
 			lua_pushlightuserdata(L, &gettag);        	
         	lua_rawget(L, -2);						//stack: obj key mt tget
 
         	if (lua_istable(L, -1))
         	{
-        	    lua_pushvalue(L, 2);				//stack: obj key mt tget key
-        	    lua_rawget(L, -2);           		//stack: obj key mt tget value 
-
-        	    if (lua_isfunction(L, -1))
+        	    if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         	    {        	        	
-                    lua_pushvalue(L, 1);
-        	        lua_call(L, 1, 1);
-        	        return 1;
+                    if (lua_isfunction(L, -1))
+                    {
+                        lua_pushvalue(L, 1);
+        	            lua_call(L, 1, 1);
+        	            return 1;
+                    }
+
+                    lua_pop(L, 1);
         	    }
         	}
     		
@@ -890,18 +989,18 @@ static int class_newindex_event(lua_State *L)
 
         		if (lua_istable(L, -1))
         		{
-            		lua_pushvalue(L, 2);
-            		lua_rawget(L, -2);                     	// stack: t k v mt tset func
-
-            		if (lua_isfunction(L, -1))
+            		if (tolua_rawget_with_firstcase_alias(L, -1, 2))
             		{
-                		lua_pushvalue(L, 1);
-                		lua_pushvalue(L, 3);
-                		lua_call(L, 2, 0);
-                		return 0;
-            		}
+                		if (lua_isfunction(L, -1))
+                        {
+                            lua_pushvalue(L, 1);
+                		    lua_pushvalue(L, 3);
+                		    lua_call(L, 2, 0);
+                		    return 0;
+                        }
 
-            		lua_pop(L, 1);                          // stack: t k v mt tset 
+                        lua_pop(L, 1);
+            		}
         		}
 
         		lua_pop(L, 1);                              // stack: t k v mt 
@@ -941,21 +1040,21 @@ static int class_newindex_event(lua_State *L)
 			lua_pushlightuserdata(L, &settag);				// stack: t k v mt tset
         	lua_rawget(L, -2);       
 
-        	if (lua_istable(L,-1)) 
-        	{
-            	lua_pushvalue(L,2);  						// stack: t k v mt tset k
-            	lua_rawget(L,-2);
+        if (lua_istable(L,-1)) 
+        {
+            if (tolua_rawget_with_firstcase_alias(L, -1, 2))
+            {  
+                if (lua_isfunction(L,-1)) 
+                {  
+                    lua_pushvalue(L,1); 
+                    lua_pushvalue(L,3); 
+                    lua_call(L,2,0);
+                    return 0;
+                }
 
-            	if (lua_isfunction(L,-1)) 
-            	{  
-                	lua_pushvalue(L,1); 
-                	lua_pushvalue(L,3); 
-                	lua_call(L,2,0);
-                	return 0;
-            	}
-
-            	lua_pop(L, 1);                          	// stack: t k v mt tset 
-        	}  
+                lua_pop(L, 1);
+            }
+        }  
 
 			lua_pop(L, 1);                              	// stack: t k v mt
 
@@ -978,33 +1077,29 @@ static int enum_index_event (lua_State *L)
 
 	if (lua_istable(L, -1))
 	{
-		lua_pushvalue(L, 2);								//stack: t, k, mt, k
-		lua_rawget(L, -2);									//stack: t, k, mt, v
-
-		if (!lua_isnil(L, -1))
+		if (tolua_rawget_with_firstcase_alias(L, -1, 2))
 		{		
 			return 1;
 		}
 
-		lua_pop(L, 1);										//stack: t, k, mt
 		lua_pushlightuserdata(L, &gettag);		
 		lua_rawget(L, -2); 									//stack: t, k, mt, tget
 
 		if (lua_istable(L,-1)) 
 		{
-            lua_pushvalue(L,2);  							//stack: t k mt tget k
-            lua_rawget(L,-2);								//stack: t k mt tget v
+            if (tolua_rawget_with_firstcase_alias(L, -1, 2))
+            {
+                if (lua_isfunction(L,-1)) 
+			    {  
+				    lua_call(L, 0, 1);					
+				    lua_pushvalue(L,2); 				
+				    lua_pushvalue(L,-2); 				
+				    lua_rawset(L, 3);		
+				    return 1;			
+			    }
 
-           	if (lua_isfunction(L,-1)) 
-			{  
-				lua_call(L, 0, 1);					
-				lua_pushvalue(L,2); 				
-				lua_pushvalue(L,-2); 				
-				lua_rawset(L, 3);		
-				return 1;			
-			}
-
-			lua_pop(L, 1);
+			    lua_pop(L, 1);
+            }
         }			
 	}
 
@@ -1021,27 +1116,25 @@ static int enum_newindex_event(lua_State *L)
 
 static int static_index_event(lua_State *L)
 {    
-    lua_pushvalue(L, 2);                    //stack: t key key
-    lua_rawget(L, 1);                       //stack: t key value        
-
-    if (!lua_isnil(L, -1))
+    if (tolua_rawget_with_firstcase_alias(L, 1, 2))
     {
         return 1;
     }
 
-    lua_pop(L, 1);            
     lua_pushlightuserdata(L, &gettag);      //stack: t key tag    
     lua_rawget(L, 1);                       //stack: t key tget
 
     if (lua_istable(L, -1))
     {
-        lua_pushvalue(L, 2);                //stack: obj key tget key
-        lua_rawget(L, -2);                  //stack: obj key tget func 
-
-        if (lua_isfunction(L, -1))
+        if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         {                       
-            lua_call(L, 0, 1);
-            return 1;
+            if (lua_isfunction(L, -1))
+            {
+                lua_call(L, 0, 1);
+                return 1;
+            }
+
+            lua_pop(L, 1);
         }        
     }
     
@@ -1067,15 +1160,17 @@ static int static_newindex_event(lua_State *L)
 
     if (lua_istable(L,-1)) 
     {
-        lua_pushvalue(L, 2);                         //stack: t k v tset k
-        lua_rawget(L, -2);                           //stack: t k v tset func
-
-        if (lua_isfunction(L, -1))
+        if (tolua_rawget_with_firstcase_alias(L, -1, 2))
         {    
-            lua_pushvalue(L,1); 
-            lua_pushvalue(L,3); 
-            lua_call(L,2,0);
-            return 0;
+            if (lua_isfunction(L, -1))
+            {
+                lua_pushvalue(L,1); 
+                lua_pushvalue(L,3); 
+                lua_call(L,2,0);
+                return 0;
+            }
+
+            lua_pop(L, 1);
         }
     }
 

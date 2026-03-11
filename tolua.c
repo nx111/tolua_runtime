@@ -499,7 +499,7 @@ static int tolua_map_reg(const tolua_bcshift_map *map, BCReg reg, BCReg *out)
   return 1;
 }
 
-static int tolua_range_has_hole(const tolua_bcshift_map *map, int first, int last)
+static int tolua_find_range_hole(const tolua_bcshift_map *map, int first, int last, int *hole_reg)
 {
   int reg = 0;
 
@@ -508,7 +508,10 @@ static int tolua_range_has_hole(const tolua_bcshift_map *map, int first, int las
   if (last > BCMAX_A) last = BCMAX_A;
 
   for (reg = first; reg < last; reg++) {
-    if (map->hole[reg]) return 1;
+    if (map->hole[reg]) {
+      if (hole_reg) *hole_reg = reg;
+      return 1;
+    }
   }
 
   return 0;
@@ -788,6 +791,7 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
                                     const tolua_bcdebug_ctx *ctx, uint32_t pc)
 {
   BCReg a = bc_a(ins);
+  int hole_reg = -1;
 
   switch (op) {
     case BC_CALL: {
@@ -801,23 +805,28 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
         }
         pair_status = tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 1);
         if (pair_status != TOLUA_BCCONV_OK) return pair_status;
-        return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
-            tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                    "CALL open-result arguments cross another FR2 hole") :
-            TOLUA_BCCONV_OK;
+        if (tolua_find_range_hole(map, (int)a + 1, (int)a + c - 1, &hole_reg)) {
+          return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "CALL open-result arguments in [%d,%d) cross FR2 hole at register %d",
+                                         (int)a + 1, (int)a + c - 1, hole_reg);
+        }
+        return TOLUA_BCCONV_OK;
       }
       if (c == 0) {
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
                                        "CALL must have at least one encoded argument slot");
       }
-      if (tolua_range_has_hole(map, (int)a + 1, (int)a + b - 2)) {
+      if (tolua_find_range_hole(map, (int)a + 1, (int)a + b - 2, &hole_reg)) {
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                       "CALL fixed results cross another FR2 hole");
+                                       "CALL fixed results in [%d,%d) cross FR2 hole at register %d",
+                                       (int)a + 1, (int)a + b - 2, hole_reg);
       }
-      return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "CALL argument range crosses another FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, (int)a + 1, (int)a + c - 1, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALL argument range [%d,%d) crosses FR2 hole at register %d",
+                                       (int)a + 1, (int)a + c - 1, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     }
     case BC_CALLT: {
       BCReg d = bc_d(ins);
@@ -825,10 +834,12 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
                                        "CALLT must have at least one encoded argument slot");
       }
-      return tolua_range_has_hole(map, (int)a + 1, (int)a + d - 1) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "CALLT argument range crosses another FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, (int)a + 1, (int)a + d - 1, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALLT argument range [%d,%d) crosses FR2 hole at register %d",
+                                       (int)a + 1, (int)a + d - 1, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     }
     case BC_ITERC: {
       BCReg b = bc_b(ins);
@@ -842,46 +853,57 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
                                        "ITERC expects the standard two-argument iterator layout (C=3), got C=%u",
                                        (unsigned int)c);
       }
-      if (tolua_range_has_hole(map, (int)a + 1, (int)a + b - 2)) {
+      if (tolua_find_range_hole(map, (int)a + 1, (int)a + b - 2, &hole_reg)) {
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                       "ITERC fixed results cross another FR2 hole");
+                                       "ITERC fixed results in [%d,%d) cross FR2 hole at register %d",
+                                       (int)a + 1, (int)a + b - 2, hole_reg);
       }
-      return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "ITERC iterator arguments cross another FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, (int)a + 1, (int)a + c - 1, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "ITERC iterator arguments in [%d,%d) cross FR2 hole at register %d",
+                                       (int)a + 1, (int)a + c - 1, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     }
     case BC_VARG: {
       BCReg b = bc_b(ins);
       if (b == 0) {
         return tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 1);
       }
-      return tolua_range_has_hole(map, a, (int)a + b - 2) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "VARG destination range crosses an FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, a, (int)a + b - 2, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "VARG destination range [%d,%d) crosses FR2 hole at register %d",
+                                       (int)a, (int)a + b - 2, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     }
     case BC_TSETM:
       return tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 0);
     case BC_RET:
-      return tolua_range_has_hole(map, a, (int)a + bc_d(ins) - 2) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "RET result range crosses an FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, a, (int)a + bc_d(ins) - 2, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "RET result range [%d,%d) crosses FR2 hole at register %d",
+                                       (int)a, (int)a + bc_d(ins) - 2, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     case BC_CAT:
-      return tolua_range_has_hole(map, bc_b(ins), bc_c(ins)) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "CAT operand range crosses an FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, bc_b(ins), bc_c(ins), &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CAT operand range [%d,%d) crosses FR2 hole at register %d",
+                                       (int)bc_b(ins), (int)bc_c(ins), hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     case BC_FORI:
     case BC_JFORI:
     case BC_FORL:
     case BC_IFORL:
     case BC_JFORL:
-      return tolua_range_has_hole(map, a, (int)a + 3) ?
-          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                  "numeric for-loop control slots cross an FR2 hole") :
-          TOLUA_BCCONV_OK;
+      if (tolua_find_range_hole(map, a, (int)a + 3, &hole_reg)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "numeric for-loop control slots [%d,%d) cross FR2 hole at register %d",
+                                       (int)a, (int)a + 3, hole_reg);
+      }
+      return TOLUA_BCCONV_OK;
     default:
       return TOLUA_BCCONV_OK;
   }

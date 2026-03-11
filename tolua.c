@@ -39,6 +39,7 @@ SOFTWARE.
 #include "luajit.h"
 #include "tolua.h"
 #if defined(LUAJIT_VERSION)
+#include "lj_obj.h"
 #include "lj_bc.h"
 #endif
 

@@ -1811,13 +1811,12 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
 {
     int status = luaL_loadbuffer(L, buff, (size_t)sz, name);
 #if defined(LUAJIT_VERSION)
-    if (status == LUA_ERRSYNTAX && (LJ_FR2 == 0) && buff != NULL && sz > 4 &&
+    if (status == LUA_ERRSYNTAX && buff != NULL && sz > 4 &&
         (uint8_t)buff[0] == TOLUA_BCDUMP_HEAD1 &&
         (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
-        (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3 &&
-        (uint8_t)buff[3] == 1) {
+        (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3) {
       int patched_sz = 0;
-      char *patched = tolua_convertbytecode(buff, sz, 0, &patched_sz);
+      char *patched = tolua_convertbytecode(buff, sz, LJ_FR2 ? 1 : 0, &patched_sz);
       if (patched != NULL) {
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);

@@ -29,6 +29,8 @@ SOFTWARE.
 #include <stdbool.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "lua.h"
@@ -51,6 +53,68 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
+static char tolua_last_bytecode_debug[1024];
+
+static void tolua_setbytecodedebugv(const char *fmt, va_list argp)
+{
+	vsnprintf(tolua_last_bytecode_debug, sizeof(tolua_last_bytecode_debug), fmt, argp);
+#ifdef _WIN32
+	OutputDebugStringA(tolua_last_bytecode_debug);
+	OutputDebugStringA("\n");
+#endif
+	fprintf(stderr, "%s\n", tolua_last_bytecode_debug);
+}
+
+static void tolua_setbytecodedebug(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	tolua_setbytecodedebugv(fmt, argp);
+	va_end(argp);
+}
+
+static void tolua_clearbytecodedebug(void)
+{
+	tolua_last_bytecode_debug[0] = '\0';
+}
+
+LUALIB_API const char* tolua_getlastbytecodedebug(void)
+{
+	return tolua_last_bytecode_debug;
+}
+
+LUALIB_API const char* tolua_getbytecodeerrorstr(int error_code)
+{
+	switch (error_code)
+	{
+		case TOLUA_BCCONV_OK:
+			return "ok";
+		case TOLUA_BCCONV_ERR_INVALID_ARGS:
+			return "invalid_args";
+		case TOLUA_BCCONV_ERR_OUT_OF_MEMORY:
+			return "out_of_memory";
+		case TOLUA_BCCONV_ERR_NOT_BYTECODE:
+			return "not_bytecode";
+		case TOLUA_BCCONV_ERR_UNSUPPORTED_VERSION:
+			return "unsupported_version";
+		case TOLUA_BCCONV_ERR_INVALID_FLAGS:
+			return "invalid_flags";
+		case TOLUA_BCCONV_ERR_SOURCE_FR2:
+			return "source_fr2";
+		case TOLUA_BCCONV_ERR_MALFORMED_CHUNK:
+			return "malformed_chunk";
+		case TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE:
+			return "unsupported_opcode";
+		case TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT:
+			return "unsupported_layout";
+		case TOLUA_BCCONV_ERR_REGISTER_OVERFLOW:
+			return "register_overflow";
+		case TOLUA_BCCONV_ERR_UNSUPPORTED_RUNTIME:
+			return "unsupported_runtime";
+		default:
+			return "unknown_error";
+	}
+}
 
 /*---------------------------tolua extend functions--------------------------------*/
 LUALIB_API void* tolua_tag()
@@ -301,6 +365,62 @@ static const uint8_t tolua_ulua_bc_map[] = {
   BC_FUNCF, BC_IFUNCF, BC_JFUNCF, BC_FUNCV, BC_IFUNCV, BC_JFUNCV, BC_FUNCC, BC_FUNCCW
 };
 
+#define TOLUA_BCNAME(name, ma, mb, mc, mm) #name,
+static const char *const tolua_bc_names[] = { BCDEF(TOLUA_BCNAME) };
+#undef TOLUA_BCNAME
+
+typedef struct tolua_bcdebug_ctx {
+  const char *chunk_name;
+  size_t chunk_name_len;
+  uint32_t proto_index;
+} tolua_bcdebug_ctx;
+
+static const char *tolua_bc_opname(BCOp op)
+{
+  return (op < BC__MAX) ? tolua_bc_names[op] : "UNKNOWN";
+}
+
+static int tolua_failbytecode(int error_code, const char *fmt, ...)
+{
+  va_list argp;
+  char detail[512];
+
+  va_start(argp, fmt);
+  vsnprintf(detail, sizeof(detail), fmt, argp);
+  va_end(argp);
+  tolua_setbytecodedebug("bytecode conversion failed (%s): %s",
+                         tolua_getbytecodeerrorstr(error_code), detail);
+  return error_code;
+}
+
+static int tolua_failbytecodeproto(const tolua_bcdebug_ctx *ctx, uint32_t pc,
+                                   BCIns ins, BCOp op, int error_code,
+                                   const char *fmt, ...)
+{
+  va_list argp;
+  char detail[384];
+
+  va_start(argp, fmt);
+  vsnprintf(detail, sizeof(detail), fmt, argp);
+  va_end(argp);
+
+  tolua_setbytecodedebug(
+      "bytecode conversion failed (%s): %s [chunk=%.*s, proto=%u, pc=%u, op=%s, raw=0x%08x, a=%u, b=%u, c=%u, d=%u]",
+      tolua_getbytecodeerrorstr(error_code),
+      detail,
+      (int)((ctx != NULL && ctx->chunk_name != NULL) ? ctx->chunk_name_len : 10),
+      (ctx != NULL && ctx->chunk_name != NULL) ? ctx->chunk_name : "<stripped>",
+      (ctx != NULL) ? ctx->proto_index : 0u,
+      pc,
+      tolua_bc_opname(op),
+      (unsigned int)ins,
+      (unsigned int)bc_a(ins),
+      (unsigned int)bc_b(ins),
+      (unsigned int)bc_c(ins),
+      (unsigned int)bc_d(ins));
+  return error_code;
+}
+
 static int tolua_read_uleb128(const uint8_t *buf, size_t len, size_t *pos, uint32_t *out)
 {
   uint32_t v = 0;
@@ -401,8 +521,181 @@ static BCOp tolua_remap_bc_op(BCOp op, int remap_v1)
   return (BCOp)tolua_ulua_bc_map[op];
 }
 
+static int tolua_resolve_proto_op(const uint8_t *buf, size_t bc_pos, uint32_t numbc, uint32_t pc,
+                                  int be, int remap_v1, int target_fr2,
+                                  BCIns ins, BCOp *out, const tolua_bcdebug_ctx *ctx)
+{
+  BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
+
+  if (op >= BC__MAX) {
+    return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE,
+                                   "opcode %u is not recognized after remap", (unsigned int)bc_op(ins));
+  }
+
+  if (target_fr2) {
+    if (op == BC_ISNEXT) {
+      ptrdiff_t target = (ptrdiff_t)pc + 1 + bc_j(ins);
+      if (target < 0 || (uint32_t)target >= numbc) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "ISNEXT jump target %d is outside the proto",
+                                       (int)target);
+      }
+
+      {
+        BCIns target_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)target * 4, be);
+        BCOp target_op = tolua_remap_bc_op(bc_op(target_ins), remap_v1);
+        if (target_op != BC_ITERN && target_op != BC_ITERC) {
+          return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "ISNEXT target pc=%d is %s instead of ITERN/ITERC",
+                                         (int)target, tolua_bc_opname(target_op));
+        }
+      }
+
+      op = BC_JMP;
+    } else if (op == BC_ITERN) {
+      op = BC_ITERC;
+    }
+  }
+
+  *out = op;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_collapse_multires_producer(uint8_t *buf, size_t bc_pos, uint32_t pc,
+                                            int be, const tolua_bcdebug_ctx *ctx)
+{
+  uint32_t producer_pc = pc;
+  uint8_t *prev_slot = NULL;
+  BCIns prev = 0;
+  BCOp prev_op = BC__MAX;
+
+  if (pc == 0) {
+    return tolua_failbytecodeproto(ctx, pc, 0, BC__MAX, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                   "open-result consumer has no preceding producer");
+  }
+
+  producer_pc = pc - 1;
+  prev_slot = buf + bc_pos + (size_t)producer_pc * 4;
+  prev = (BCIns)tolua_read_ins(prev_slot, be);
+  prev_op = bc_op(prev);
+  if (prev_op == BC_UCLO) {
+    if (producer_pc == 0) {
+      return tolua_failbytecodeproto(ctx, producer_pc, prev, prev_op,
+                                     TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "UCLO before open-result consumer has no preceding producer");
+    }
+    if ((ptrdiff_t)producer_pc + 1 + bc_j(prev) != (ptrdiff_t)pc) {
+      return tolua_failbytecodeproto(ctx, producer_pc, prev, prev_op,
+                                     TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "UCLO before open-result consumer jumps to pc=%d instead of pc=%u",
+                                     (int)((ptrdiff_t)producer_pc + 1 + bc_j(prev)),
+                                     (unsigned int)pc);
+    }
+    producer_pc--;
+    prev_slot = buf + bc_pos + (size_t)producer_pc * 4;
+    prev = (BCIns)tolua_read_ins(prev_slot, be);
+    prev_op = bc_op(prev);
+  }
+
+  switch (prev_op) {
+    case BC_CALL:
+    case BC_VARG:
+      if (bc_b(prev) == 0) {
+        setbc_b(&prev, 2);
+        tolua_write_ins(prev_slot, (uint32_t)prev, be);
+      }
+      return TOLUA_BCCONV_OK;
+    default:
+      return tolua_failbytecodeproto(ctx, producer_pc, prev, prev_op,
+                                     TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "preceding %s does not support single-result downgrade",
+                                     tolua_bc_opname(prev_op));
+  }
+}
+
+static int tolua_prepare_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                        int remap_v1, int target_fr2,
+                                        const tolua_bcdebug_ctx *ctx)
+{
+  uint32_t i = 0;
+
+  for (i = 0; i < numbc; i++) {
+    uint8_t *slot = buf + bc_pos + (size_t)i * 4;
+    BCIns ins = (BCIns)tolua_read_ins(slot, be);
+    BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
+
+    if (op >= BC__MAX) {
+      return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE,
+                                     "opcode %u is not recognized after remap", (unsigned int)bc_op(ins));
+    }
+
+    if (target_fr2) {
+      if (op == BC_CALLM) {
+        BCReg new_b = bc_b(ins) ? bc_b(ins) : 2;
+        BCReg new_c = (BCReg)(bc_c(ins) + 2);
+
+        if ((uint32_t)bc_c(ins) + 2 > BCMAX_C) {
+          return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "CALLM argument count overflows when downgraded to CALL");
+        }
+        if (tolua_collapse_multires_producer(buf, bc_pos, i, be, ctx) != TOLUA_BCCONV_OK) {
+          return TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT;
+        }
+
+        setbc_op(&ins, BC_CALL);
+        setbc_b(&ins, new_b);
+        setbc_c(&ins, new_c);
+        op = BC_CALL;
+      } else if (op == BC_CALLMT) {
+        BCReg new_d = (BCReg)(bc_c(ins) + 2);
+
+        if ((uint32_t)bc_c(ins) + 2 > BCMAX_D) {
+          return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "CALLMT argument count overflows when downgraded to CALLT");
+        }
+        if (tolua_collapse_multires_producer(buf, bc_pos, i, be, ctx) != TOLUA_BCCONV_OK) {
+          return TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT;
+        }
+
+        ins = BCINS_AD(BC_CALLT, bc_a(ins), new_d);
+        op = BC_CALLT;
+      } else if (op == BC_ISNEXT) {
+        ptrdiff_t target = (ptrdiff_t)i + 1 + bc_j(ins);
+        if (target < 0 || (uint32_t)target >= numbc) {
+          return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "ISNEXT jump target %d is outside the proto",
+                                         (int)target);
+        }
+        {
+          BCIns target_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)target * 4, be);
+          BCOp target_op = tolua_remap_bc_op(bc_op(target_ins), remap_v1);
+          if (target_op != BC_ITERN && target_op != BC_ITERC) {
+            return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                           "ISNEXT target pc=%d is %s instead of ITERN/ITERC",
+                                           (int)target, tolua_bc_opname(target_op));
+          }
+        }
+        op = BC_JMP;
+        setbc_op(&ins, op);
+      } else if (op == BC_ITERN) {
+        op = BC_ITERC;
+        setbc_op(&ins, op);
+      } else {
+        setbc_op(&ins, op);
+      }
+    } else {
+      setbc_op(&ins, op);
+    }
+
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  return TOLUA_BCCONV_OK;
+}
+
 static int tolua_collect_proto_holes(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
-                                     int remap_v1, tolua_bcshift_map *map)
+                                     int remap_v1, int target_fr2, tolua_bcshift_map *map,
+                                     const tolua_bcdebug_ctx *ctx)
 {
   uint32_t i = 0;
 
@@ -410,36 +703,89 @@ static int tolua_collect_proto_holes(const uint8_t *buf, size_t bc_pos, uint32_t
 
   for (i = 0; i < numbc; i++) {
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)i * 4, be);
-    BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
-
-    if (op >= BC__MAX) return 0;
+    BCOp op = BC__MAX;
+    int status = tolua_resolve_proto_op(buf, bc_pos, numbc, i, be, remap_v1, target_fr2, ins, &op, ctx);
+    if (status != TOLUA_BCCONV_OK) return status;
 
     switch (op) {
       case BC_CALL:
       case BC_CALLT:
+      case BC_ITERC:
         map->hole[bc_a(ins)] = 1;
         break;
       case BC_CALLM:
       case BC_CALLMT:
       case BC_RETM:
-      case BC_ITERC:
-      case BC_ITERN:
-      case BC_ISNEXT:
-      case BC_ITERL:
-      case BC_IITERL:
-      case BC_JITERL:
-      case BC_TSETM:
-        return 0;
+        return tolua_failbytecodeproto(ctx, i, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE,
+                                       "opcode %s needs open-result conversion that is not implemented",
+                                       tolua_bc_opname(op));
       default:
         break;
     }
   }
 
   tolua_build_shift_map(map);
-  return 1;
+  return TOLUA_BCCONV_OK;
 }
 
-static int tolua_validate_proto_ins(const tolua_bcshift_map *map, BCOp op, BCIns ins)
+static int tolua_validate_open_tsetm_pair(const uint8_t *buf, size_t bc_pos, uint32_t numbc,
+                                          uint32_t pc, int be, BCIns ins, BCOp op,
+                                          const tolua_bcdebug_ctx *ctx, int producer_side)
+{
+  BCReg a = bc_a(ins);
+
+  if (producer_side) {
+    BCIns next = 0;
+
+    if (pc + 1 >= numbc) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "%s with open results must be followed by TSETM",
+                                     tolua_bc_opname(op));
+    }
+
+    next = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc + 1) * 4, be);
+    if (bc_op(next) != BC_TSETM) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "%s with open results is only supported when immediately consumed by TSETM",
+                                     tolua_bc_opname(op));
+    }
+    if (bc_a(next) != a) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "%s open-result base A=%u does not match following TSETM base A=%u",
+                                     tolua_bc_opname(op), (unsigned int)a,
+                                     (unsigned int)bc_a(next));
+    }
+
+    return TOLUA_BCCONV_OK;
+  } else {
+    BCIns prev = 0;
+    BCOp prev_op = BC__MAX;
+
+    if (pc == 0) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "TSETM has no preceding open-result producer");
+    }
+
+    prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    prev_op = bc_op(prev);
+    if (!((prev_op == BC_CALL || prev_op == BC_VARG) && bc_b(prev) == 0)) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "TSETM must follow CALL/VARG with open results");
+    }
+    if (bc_a(prev) != a) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "TSETM base A=%u does not match preceding %s base A=%u",
+                                     (unsigned int)a, tolua_bc_opname(prev_op),
+                                     (unsigned int)bc_a(prev));
+    }
+
+    return TOLUA_BCCONV_OK;
+  }
+}
+
+static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                    const tolua_bcshift_map *map, BCOp op, BCIns ins,
+                                    const tolua_bcdebug_ctx *ctx, uint32_t pc)
 {
   BCReg a = bc_a(ins);
 
@@ -447,47 +793,118 @@ static int tolua_validate_proto_ins(const tolua_bcshift_map *map, BCOp op, BCIns
     case BC_CALL: {
       BCReg b = bc_b(ins);
       BCReg c = bc_c(ins);
-      if (b == 0 || b > 2) return 0;
-      if (c == 0) return 0;
-      return !tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1);
+      if (b == 0) {
+        int pair_status = TOLUA_BCCONV_OK;
+        if (c == 0) {
+          return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                         "CALL must have at least one encoded argument slot");
+        }
+        pair_status = tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 1);
+        if (pair_status != TOLUA_BCCONV_OK) return pair_status;
+        return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
+            tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                    "CALL open-result arguments cross another FR2 hole") :
+            TOLUA_BCCONV_OK;
+      }
+      if (c == 0) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALL must have at least one encoded argument slot");
+      }
+      if (tolua_range_has_hole(map, (int)a + 1, (int)a + b - 2)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALL fixed results cross another FR2 hole");
+      }
+      return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "CALL argument range crosses another FR2 hole") :
+          TOLUA_BCCONV_OK;
     }
     case BC_CALLT: {
       BCReg d = bc_d(ins);
-      if (d == 0) return 0;
-      return !tolua_range_has_hole(map, (int)a + 1, (int)a + d - 1);
+      if (d == 0) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALLT must have at least one encoded argument slot");
+      }
+      return tolua_range_has_hole(map, (int)a + 1, (int)a + d - 1) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "CALLT argument range crosses another FR2 hole") :
+          TOLUA_BCCONV_OK;
+    }
+    case BC_ITERC: {
+      BCReg b = bc_b(ins);
+      BCReg c = bc_c(ins);
+      if (b == 0) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "ITERC with open results (B=0) is not supported");
+      }
+      if (c != 3) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "ITERC expects the standard two-argument iterator layout (C=3), got C=%u",
+                                       (unsigned int)c);
+      }
+      if (tolua_range_has_hole(map, (int)a + 1, (int)a + b - 2)) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "ITERC fixed results cross another FR2 hole");
+      }
+      return tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "ITERC iterator arguments cross another FR2 hole") :
+          TOLUA_BCCONV_OK;
     }
     case BC_VARG: {
       BCReg b = bc_b(ins);
-      if (b == 0) return 0;
-      return !tolua_range_has_hole(map, a, (int)a + b - 2);
+      if (b == 0) {
+        return tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 1);
+      }
+      return tolua_range_has_hole(map, a, (int)a + b - 2) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "VARG destination range crosses an FR2 hole") :
+          TOLUA_BCCONV_OK;
     }
+    case BC_TSETM:
+      return tolua_validate_open_tsetm_pair(buf, bc_pos, numbc, pc, be, ins, op, ctx, 0);
     case BC_RET:
-      return !tolua_range_has_hole(map, a, (int)a + bc_d(ins) - 2);
+      return tolua_range_has_hole(map, a, (int)a + bc_d(ins) - 2) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "RET result range crosses an FR2 hole") :
+          TOLUA_BCCONV_OK;
     case BC_CAT:
-      return !tolua_range_has_hole(map, bc_b(ins), bc_c(ins));
+      return tolua_range_has_hole(map, bc_b(ins), bc_c(ins)) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "CAT operand range crosses an FR2 hole") :
+          TOLUA_BCCONV_OK;
     case BC_FORI:
     case BC_JFORI:
     case BC_FORL:
     case BC_IFORL:
     case BC_JFORL:
-      return !tolua_range_has_hole(map, a, (int)a + 3);
+      return tolua_range_has_hole(map, a, (int)a + 3) ?
+          tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                  "numeric for-loop control slots cross an FR2 hole") :
+          TOLUA_BCCONV_OK;
     default:
-      return 1;
+      return TOLUA_BCCONV_OK;
   }
 }
 
-static int tolua_rewrite_proto_ins(const tolua_bcshift_map *map, BCIns *ins)
+static int tolua_rewrite_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                   const tolua_bcshift_map *map, BCIns *ins,
+                                   const tolua_bcdebug_ctx *ctx, uint32_t pc)
 {
   BCOp op = bc_op(*ins);
   BCMode mode = BCMnone;
   BCReg reg = 0;
+  int status = tolua_validate_proto_ins(buf, bc_pos, numbc, be, map, op, *ins, ctx, pc);
 
-  if (!tolua_validate_proto_ins(map, op, *ins)) return 0;
+  if (status != TOLUA_BCCONV_OK) return status;
 
   mode = bcmode_a(op);
   if (tolua_is_reg_mode(mode)) {
     reg = bc_a(*ins);
-    if (!tolua_map_reg(map, reg, &reg)) return 0;
+    if (!tolua_map_reg(map, reg, &reg)) {
+      return tolua_failbytecodeproto(ctx, pc, *ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                     "failed to remap A register %u", (unsigned int)bc_a(*ins));
+    }
     setbc_a(ins, reg);
   }
 
@@ -495,76 +912,117 @@ static int tolua_rewrite_proto_ins(const tolua_bcshift_map *map, BCIns *ins)
     mode = bcmode_d(op);
     if (tolua_is_reg_mode(mode)) {
       reg = bc_d(*ins);
-      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      if (!tolua_map_reg(map, reg, &reg)) {
+        return tolua_failbytecodeproto(ctx, pc, *ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                       "failed to remap D register %u", (unsigned int)bc_d(*ins));
+      }
       setbc_d(ins, reg);
     }
   } else {
     mode = bcmode_b(op);
     if (tolua_is_reg_mode(mode)) {
       reg = bc_b(*ins);
-      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      if (!tolua_map_reg(map, reg, &reg)) {
+        return tolua_failbytecodeproto(ctx, pc, *ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                       "failed to remap B register %u", (unsigned int)bc_b(*ins));
+      }
       setbc_b(ins, reg);
     }
 
     mode = bcmode_c(op);
     if (tolua_is_reg_mode(mode)) {
       reg = bc_c(*ins);
-      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      if (!tolua_map_reg(map, reg, &reg)) {
+        return tolua_failbytecodeproto(ctx, pc, *ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                       "failed to remap C register %u", (unsigned int)bc_c(*ins));
+      }
       setbc_c(ins, reg);
     }
   }
 
-  return 1;
+  return TOLUA_BCCONV_OK;
 }
 
 static int tolua_patch_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
-                                      int remap_v1, int target_fr2)
+                                      int remap_v1, int target_fr2,
+                                      const tolua_bcdebug_ctx *ctx)
 {
   tolua_bcshift_map map;
   uint32_t i = 0;
+  int status = TOLUA_BCCONV_OK;
+  int patch_remap_v1 = remap_v1;
 
-  if (target_fr2 && !tolua_collect_proto_holes(buf, bc_pos, numbc, be, remap_v1, &map)) {
-    return 0;
+  if (target_fr2 || remap_v1) {
+    status = tolua_prepare_proto_bytecode(buf, bc_pos, numbc, be, remap_v1, target_fr2, ctx);
+    if (status != TOLUA_BCCONV_OK) return status;
+    patch_remap_v1 = 0;
+  }
+
+  if (target_fr2) {
+    status = tolua_collect_proto_holes(buf, bc_pos, numbc, be, patch_remap_v1, target_fr2, &map, ctx);
+    if (status != TOLUA_BCCONV_OK) return status;
   }
 
   for (i = 0; i < numbc; i++) {
     uint8_t *slot = buf + bc_pos + (size_t)i * 4;
     BCIns ins = (BCIns)tolua_read_ins(slot, be);
-    BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
+    BCOp op = BC__MAX;
 
-    if (op >= BC__MAX) return 0;
+    status = tolua_resolve_proto_op(buf, bc_pos, numbc, i, be, patch_remap_v1, target_fr2, ins, &op, ctx);
+    if (status != TOLUA_BCCONV_OK) return status;
 
     setbc_op(&ins, op);
 
-    if (target_fr2 && !tolua_rewrite_proto_ins(&map, &ins)) {
-      return 0;
+    if (target_fr2) {
+      status = tolua_rewrite_proto_ins(buf, bc_pos, numbc, be, &map, &ins, ctx, i);
+      if (status != TOLUA_BCCONV_OK) return status;
     }
 
     tolua_write_ins(slot, (uint32_t)ins, be);
   }
 
-  return 1;
+  return TOLUA_BCCONV_OK;
 }
 
 static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_fr2)
 {
   size_t pos = 0;
   size_t flag_pos = 0;
+  size_t chunk_name_pos = 0;
+  size_t chunk_name_len = 0;
   uint32_t flags = 0;
   uint32_t version = 0;
   int be = 0;
   int strip = 0;
   int source_fr2 = 0;
+  int status = TOLUA_BCCONV_OK;
 
-  if (len < 5) return 0;
-  if (buf[0] != TOLUA_BCDUMP_HEAD1 || buf[1] != TOLUA_BCDUMP_HEAD2 || buf[2] != TOLUA_BCDUMP_HEAD3) return 0;
+  if (len < 5) {
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_NOT_BYTECODE,
+                              "input is too short to be a LuaJIT bytecode chunk (size=%u)",
+                              (unsigned int)len);
+  }
+  if (buf[0] != TOLUA_BCDUMP_HEAD1 || buf[1] != TOLUA_BCDUMP_HEAD2 || buf[2] != TOLUA_BCDUMP_HEAD3) {
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_NOT_BYTECODE,
+                              "bytecode header mismatch: got %02x %02x %02x",
+                              (unsigned int)buf[0], (unsigned int)buf[1], (unsigned int)buf[2]);
+  }
   version = buf[3];
-  if (version != 1 && version != TOLUA_BCDUMP_VERSION) return 0;
+  if (version != 1 && version != TOLUA_BCDUMP_VERSION) {
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_UNSUPPORTED_VERSION,
+                              "unsupported bytecode version %u", (unsigned int)version);
+  }
 
   pos = 4;
   flag_pos = pos;
-  if (!tolua_read_uleb128(buf, len, &pos, &flags)) return 0;
-  if ((flags & ~(TOLUA_BCDUMP_F_FR2 * 2 - 1)) != 0) return 0;
+  if (!tolua_read_uleb128(buf, len, &pos, &flags)) {
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                              "failed to read bytecode flags");
+  }
+  if ((flags & ~(TOLUA_BCDUMP_F_FR2 * 2 - 1)) != 0) {
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_INVALID_FLAGS,
+                              "unsupported flags value 0x%x", (unsigned int)flags);
+  }
 
   be = (flags & TOLUA_BCDUMP_F_BE) ? 1 : 0;
   strip = (flags & TOLUA_BCDUMP_F_STRIP) ? 1 : 0;
@@ -572,20 +1030,31 @@ static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_f
 
   if (source_fr2) {
     if (target_fr2 && version == TOLUA_BCDUMP_VERSION) {
-      return 1;
+      return TOLUA_BCCONV_OK;
     }
 
-    return 0;
+    return tolua_failbytecode(TOLUA_BCCONV_ERR_SOURCE_FR2,
+                              "source chunk already has FR2 flag set");
   }
 
   if (!strip) {
     uint32_t name_len = 0;
-    if (!tolua_read_uleb128(buf, len, &pos, &name_len)) return 0;
-    if ((size_t)name_len > len - pos) return 0;
+    if (!tolua_read_uleb128(buf, len, &pos, &name_len)) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "failed to read chunk name length");
+    }
+    if ((size_t)name_len > len - pos) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "chunk name length %u exceeds remaining size %u",
+                                (unsigned int)name_len, (unsigned int)(len - pos));
+    }
+    chunk_name_pos = pos;
+    chunk_name_len = (size_t)name_len;
     pos += (size_t)name_len;
   }
 
-  for (;;) {
+  for (uint32_t proto_index = 0;; proto_index++) {
+    tolua_bcdebug_ctx ctx;
     uint32_t proto_len = 0;
     size_t p = 0;
     size_t proto_end = 0;
@@ -593,39 +1062,79 @@ static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_f
     size_t framesize_pos = 0;
     uint32_t numkgc = 0, numkn = 0, numbc = 0;
     uint32_t sizedbg = 0;
+    ctx.chunk_name = (!strip && chunk_name_len != 0) ? (const char *)(buf + chunk_name_pos) : NULL;
+    ctx.chunk_name_len = chunk_name_len;
+    ctx.proto_index = proto_index;
 
-    if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) return 0;
+    if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "failed to read proto length for proto %u",
+                                (unsigned int)proto_index);
+    }
     if (proto_len == 0) break;
-    if ((size_t)proto_len > len - pos) return 0;
+    if ((size_t)proto_len > len - pos) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "proto %u length %u exceeds remaining chunk size %u",
+                                (unsigned int)proto_index, (unsigned int)proto_len,
+                                (unsigned int)(len - pos));
+    }
 
     p = pos;
     proto_end = pos + (size_t)proto_len;
-    if (p + 4 > proto_end) return 0;
+    if (p + 4 > proto_end) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "proto %u header is truncated", (unsigned int)proto_index);
+    }
     framesize_pos = p + 2;
     p += 4; /* pflags, params, framesize, uv */
 
-    if (!tolua_read_uleb128(buf, len, &p, &numkgc)) return 0;
-    if (!tolua_read_uleb128(buf, len, &p, &numkn)) return 0;
-    if (!tolua_read_uleb128(buf, len, &p, &numbc)) return 0;
-    if (p > proto_end) return 0;
+    if (!tolua_read_uleb128(buf, len, &p, &numkgc) ||
+        !tolua_read_uleb128(buf, len, &p, &numkn) ||
+        !tolua_read_uleb128(buf, len, &p, &numbc)) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "proto %u has malformed KGC/KNUM/BC counts",
+                                (unsigned int)proto_index);
+    }
+    if (p > proto_end) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "proto %u count section exceeds proto bounds",
+                                (unsigned int)proto_index);
+    }
     (void)numkgc;
     (void)numkn;
 
     if (!strip) {
-      if (!tolua_read_uleb128(buf, len, &p, &sizedbg)) return 0;
+      if (!tolua_read_uleb128(buf, len, &p, &sizedbg)) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u has malformed debug-size field",
+                                  (unsigned int)proto_index);
+      }
       if (sizedbg) {
         uint32_t firstline = 0, numline = 0;
-        if (!tolua_read_uleb128(buf, len, &p, &firstline)) return 0;
-        if (!tolua_read_uleb128(buf, len, &p, &numline)) return 0;
+        if (!tolua_read_uleb128(buf, len, &p, &firstline) ||
+            !tolua_read_uleb128(buf, len, &p, &numline)) {
+          return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                    "proto %u has malformed debug line info",
+                                    (unsigned int)proto_index);
+        }
       }
-      if (p > proto_end) return 0;
+      if (p > proto_end) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u debug header exceeds proto bounds",
+                                  (unsigned int)proto_index);
+      }
     }
 
     bc_pos = p;
-    if ((size_t)numbc > (proto_end - bc_pos) / 4) return 0;
+    if ((size_t)numbc > (proto_end - bc_pos) / 4) {
+      return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                "proto %u bytecode count %u exceeds proto body",
+                                (unsigned int)proto_index, (unsigned int)numbc);
+    }
 
-    if (!tolua_patch_proto_bytecode(buf, bc_pos, numbc, be, version == 1, target_fr2)) {
-      return 0;
+    status = tolua_patch_proto_bytecode(buf, bc_pos, numbc, be, version == 1, target_fr2, &ctx);
+    if (status != TOLUA_BCCONV_OK) {
+      return status;
     }
 
     if (target_fr2) {
@@ -634,13 +1143,22 @@ static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_f
       BCReg last = 0;
       BCReg mapped = 0;
 
-      if (!tolua_collect_proto_holes(buf, bc_pos, numbc, be, 0, &map)) {
-        return 0;
+      status = tolua_collect_proto_holes(buf, bc_pos, numbc, be, 0, target_fr2, &map, &ctx);
+      if (status != TOLUA_BCCONV_OK) {
+        return status;
       }
 
       last = (BCReg)(framesize - 1);
-      if (!tolua_map_reg(&map, last, &mapped)) return 0;
-      if ((uint32_t)mapped + 1 > 0xff) return 0;
+      if (!tolua_map_reg(&map, last, &mapped)) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                  "proto %u frame size %u overflows after FR2 remap",
+                                  (unsigned int)proto_index, (unsigned int)framesize);
+      }
+      if ((uint32_t)mapped + 1 > 0xff) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                  "proto %u remapped frame size %u exceeds register limit",
+                                  (unsigned int)proto_index, (unsigned int)mapped + 1);
+      }
       buf[framesize_pos] = (uint8_t)(mapped + 1);
     }
 
@@ -649,36 +1167,69 @@ static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_f
 
   buf[3] = TOLUA_BCDUMP_VERSION;
   buf[flag_pos] = (uint8_t)((flags & ~TOLUA_BCDUMP_F_FR2) | (target_fr2 ? TOLUA_BCDUMP_F_FR2 : 0));
-  return 1;
+  return TOLUA_BCCONV_OK;
 }
 
 LUALIB_API char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz)
 {
-  uint8_t *patched = NULL;
+  return tolua_convertbytecodeex(buff, sz, target_fr2, out_sz, NULL);
+}
 
+LUALIB_API char* tolua_convertbytecodeex(const char *buff, int sz, int target_fr2, int *out_sz, int *error_code)
+{
+  uint8_t *patched = NULL;
+  int status = TOLUA_BCCONV_OK;
+
+  tolua_clearbytecodedebug();
   if (out_sz != NULL) *out_sz = 0;
-  if (buff == NULL || sz <= 0) return NULL;
+  if (error_code != NULL) *error_code = TOLUA_BCCONV_OK;
+  if (buff == NULL || sz <= 0) {
+    tolua_failbytecode(TOLUA_BCCONV_ERR_INVALID_ARGS,
+                       "invalid arguments: buff=%p, size=%d", buff, sz);
+    if (error_code != NULL) *error_code = TOLUA_BCCONV_ERR_INVALID_ARGS;
+    return NULL;
+  }
   if (target_fr2 != 0) target_fr2 = 1;
 
   patched = (uint8_t *)malloc((size_t)sz);
-  if (patched == NULL) return NULL;
+  if (patched == NULL) {
+    tolua_failbytecode(TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                       "failed to allocate %d bytes for converted bytecode", sz);
+    if (error_code != NULL) *error_code = TOLUA_BCCONV_ERR_OUT_OF_MEMORY;
+    return NULL;
+  }
 
   memcpy(patched, buff, (size_t)sz);
-  if (!tolua_convert_bytecode_inplace(patched, (size_t)sz, target_fr2)) {
+  status = tolua_convert_bytecode_inplace(patched, (size_t)sz, target_fr2);
+  if (status != TOLUA_BCCONV_OK) {
+    if (tolua_last_bytecode_debug[0] == '\0') {
+      tolua_failbytecode(status, "conversion aborted without detailed context");
+    }
+    if (error_code != NULL) *error_code = status;
     free(patched);
     return NULL;
   }
 
+  tolua_clearbytecodedebug();
   if (out_sz != NULL) *out_sz = sz;
   return (char *)patched;
 }
 #else
 LUALIB_API char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz)
 {
+  return tolua_convertbytecodeex(buff, sz, target_fr2, out_sz, NULL);
+}
+
+LUALIB_API char* tolua_convertbytecodeex(const char *buff, int sz, int target_fr2, int *out_sz, int *error_code)
+{
   (void)buff;
   (void)sz;
   (void)target_fr2;
+  tolua_clearbytecodedebug();
+  tolua_setbytecodedebug("bytecode conversion failed (%s): bytecode conversion requires a LuaJIT build",
+                         tolua_getbytecodeerrorstr(TOLUA_BCCONV_ERR_UNSUPPORTED_RUNTIME));
   if (out_sz != NULL) *out_sz = 0;
+  if (error_code != NULL) *error_code = TOLUA_BCCONV_ERR_UNSUPPORTED_RUNTIME;
   return NULL;
 }
 #endif
@@ -3190,4 +3741,3 @@ LUALIB_API int luanet_checkudata(lua_State *L, int index, const char *type) {
     }
     return -1;
 }
-

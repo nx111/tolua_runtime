@@ -43,6 +43,19 @@
 
 #define MAX_ITEM 512
 
+#define TOLUA_BCCONV_OK                         0
+#define TOLUA_BCCONV_ERR_INVALID_ARGS          1
+#define TOLUA_BCCONV_ERR_OUT_OF_MEMORY         2
+#define TOLUA_BCCONV_ERR_NOT_BYTECODE          3
+#define TOLUA_BCCONV_ERR_UNSUPPORTED_VERSION   4
+#define TOLUA_BCCONV_ERR_INVALID_FLAGS         5
+#define TOLUA_BCCONV_ERR_SOURCE_FR2            6
+#define TOLUA_BCCONV_ERR_MALFORMED_CHUNK       7
+#define TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE    8
+#define TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT    9
+#define TOLUA_BCCONV_ERR_REGISTER_OVERFLOW     10
+#define TOLUA_BCCONV_ERR_UNSUPPORTED_RUNTIME   11
+
 #define abs_index(L, i)  ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : lua_gettop(L) + (i) + 1)
 
 void tolua_openint64(lua_State* L);
@@ -53,6 +66,9 @@ void tolua_openuint64(lua_State* L);
 int  tolua_newuint64(lua_State* L);
 
 char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz);
+char* tolua_convertbytecodeex(const char *buff, int sz, int target_fr2, int *out_sz, int *error_code);
+const char* tolua_getlastbytecodedebug(void);
+const char* tolua_getbytecodeerrorstr(int error_code);
 
 extern int toluaflags;
 

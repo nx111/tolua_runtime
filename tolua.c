@@ -319,25 +319,264 @@ static int tolua_read_uleb128(const uint8_t *buf, size_t len, size_t *pos, uint3
   return 0;
 }
 
-static int tolua_remap_legacy_bytecode(uint8_t *buf, size_t len)
+typedef struct tolua_bcshift_map {
+  uint8_t hole[BCMAX_A + 1];
+  uint16_t prefix[BCMAX_A + 1];
+} tolua_bcshift_map;
+
+static uint32_t tolua_read_ins(const uint8_t *buf, int be)
+{
+  if (be) {
+    return ((uint32_t)buf[0] << 24) |
+           ((uint32_t)buf[1] << 16) |
+           ((uint32_t)buf[2] << 8) |
+           (uint32_t)buf[3];
+  }
+
+  return ((uint32_t)buf[0]) |
+         ((uint32_t)buf[1] << 8) |
+         ((uint32_t)buf[2] << 16) |
+         ((uint32_t)buf[3] << 24);
+}
+
+static void tolua_write_ins(uint8_t *buf, uint32_t ins, int be)
+{
+  if (be) {
+    buf[0] = (uint8_t)(ins >> 24);
+    buf[1] = (uint8_t)(ins >> 16);
+    buf[2] = (uint8_t)(ins >> 8);
+    buf[3] = (uint8_t)ins;
+    return;
+  }
+
+  buf[0] = (uint8_t)ins;
+  buf[1] = (uint8_t)(ins >> 8);
+  buf[2] = (uint8_t)(ins >> 16);
+  buf[3] = (uint8_t)(ins >> 24);
+}
+
+static int tolua_is_reg_mode(BCMode mode)
+{
+  return mode == BCMdst || mode == BCMbase || mode == BCMvar || mode == BCMrbase;
+}
+
+static void tolua_build_shift_map(tolua_bcshift_map *map)
+{
+  uint16_t count = 0;
+  int i = 0;
+
+  for (i = 0; i <= BCMAX_A; i++) {
+    map->prefix[i] = count;
+    if (map->hole[i]) count++;
+  }
+}
+
+static int tolua_map_reg(const tolua_bcshift_map *map, BCReg reg, BCReg *out)
+{
+  uint32_t mapped = (uint32_t)reg + (uint32_t)map->prefix[reg];
+  if (mapped > BCMAX_A) return 0;
+  *out = (BCReg)mapped;
+  return 1;
+}
+
+static int tolua_range_has_hole(const tolua_bcshift_map *map, int first, int last)
+{
+  int reg = 0;
+
+  if (last <= first) return 0;
+  if (first < 0) first = 0;
+  if (last > BCMAX_A) last = BCMAX_A;
+
+  for (reg = first; reg < last; reg++) {
+    if (map->hole[reg]) return 1;
+  }
+
+  return 0;
+}
+
+static BCOp tolua_remap_bc_op(BCOp op, int remap_v1)
+{
+  if (!remap_v1) return op;
+  if ((size_t)op >= sizeof(tolua_ulua_bc_map)) return BC__MAX;
+  return (BCOp)tolua_ulua_bc_map[op];
+}
+
+static int tolua_collect_proto_holes(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                     int remap_v1, tolua_bcshift_map *map)
+{
+  uint32_t i = 0;
+
+  memset(map, 0, sizeof(*map));
+
+  for (i = 0; i < numbc; i++) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)i * 4, be);
+    BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
+
+    if (op >= BC__MAX) return 0;
+
+    switch (op) {
+      case BC_CALL:
+      case BC_CALLT:
+        map->hole[bc_a(ins)] = 1;
+        break;
+      case BC_CALLM:
+      case BC_CALLMT:
+      case BC_RETM:
+      case BC_ITERC:
+      case BC_ITERN:
+      case BC_ISNEXT:
+      case BC_ITERL:
+      case BC_IITERL:
+      case BC_JITERL:
+      case BC_TSETM:
+        return 0;
+      default:
+        break;
+    }
+  }
+
+  tolua_build_shift_map(map);
+  return 1;
+}
+
+static int tolua_validate_proto_ins(const tolua_bcshift_map *map, BCOp op, BCIns ins)
+{
+  BCReg a = bc_a(ins);
+
+  switch (op) {
+    case BC_CALL: {
+      BCReg b = bc_b(ins);
+      BCReg c = bc_c(ins);
+      if (b == 0 || b > 2) return 0;
+      if (c == 0) return 0;
+      return !tolua_range_has_hole(map, (int)a + 1, (int)a + c - 1);
+    }
+    case BC_CALLT: {
+      BCReg d = bc_d(ins);
+      if (d == 0) return 0;
+      return !tolua_range_has_hole(map, (int)a + 1, (int)a + d - 1);
+    }
+    case BC_VARG: {
+      BCReg b = bc_b(ins);
+      if (b == 0) return 0;
+      return !tolua_range_has_hole(map, a, (int)a + b - 2);
+    }
+    case BC_RET:
+      return !tolua_range_has_hole(map, a, (int)a + bc_d(ins) - 2);
+    case BC_CAT:
+      return !tolua_range_has_hole(map, bc_b(ins), bc_c(ins));
+    case BC_FORI:
+    case BC_JFORI:
+    case BC_FORL:
+    case BC_IFORL:
+    case BC_JFORL:
+      return !tolua_range_has_hole(map, a, (int)a + 3);
+    default:
+      return 1;
+  }
+}
+
+static int tolua_rewrite_proto_ins(const tolua_bcshift_map *map, BCIns *ins)
+{
+  BCOp op = bc_op(*ins);
+  BCMode mode = BCMnone;
+  BCReg reg = 0;
+
+  if (!tolua_validate_proto_ins(map, op, *ins)) return 0;
+
+  mode = bcmode_a(op);
+  if (tolua_is_reg_mode(mode)) {
+    reg = bc_a(*ins);
+    if (!tolua_map_reg(map, reg, &reg)) return 0;
+    setbc_a(ins, reg);
+  }
+
+  if (bcmode_hasd(op)) {
+    mode = bcmode_d(op);
+    if (tolua_is_reg_mode(mode)) {
+      reg = bc_d(*ins);
+      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      setbc_d(ins, reg);
+    }
+  } else {
+    mode = bcmode_b(op);
+    if (tolua_is_reg_mode(mode)) {
+      reg = bc_b(*ins);
+      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      setbc_b(ins, reg);
+    }
+
+    mode = bcmode_c(op);
+    if (tolua_is_reg_mode(mode)) {
+      reg = bc_c(*ins);
+      if (!tolua_map_reg(map, reg, &reg)) return 0;
+      setbc_c(ins, reg);
+    }
+  }
+
+  return 1;
+}
+
+static int tolua_patch_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                      int remap_v1, int target_fr2)
+{
+  tolua_bcshift_map map;
+  uint32_t i = 0;
+
+  if (target_fr2 && !tolua_collect_proto_holes(buf, bc_pos, numbc, be, remap_v1, &map)) {
+    return 0;
+  }
+
+  for (i = 0; i < numbc; i++) {
+    uint8_t *slot = buf + bc_pos + (size_t)i * 4;
+    BCIns ins = (BCIns)tolua_read_ins(slot, be);
+    BCOp op = tolua_remap_bc_op(bc_op(ins), remap_v1);
+
+    if (op >= BC__MAX) return 0;
+
+    setbc_op(&ins, op);
+
+    if (target_fr2 && !tolua_rewrite_proto_ins(&map, &ins)) {
+      return 0;
+    }
+
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  return 1;
+}
+
+static int tolua_convert_bytecode_inplace(uint8_t *buf, size_t len, int target_fr2)
 {
   size_t pos = 0;
+  size_t flag_pos = 0;
   uint32_t flags = 0;
+  uint32_t version = 0;
   int be = 0;
   int strip = 0;
+  int source_fr2 = 0;
 
   if (len < 5) return 0;
   if (buf[0] != TOLUA_BCDUMP_HEAD1 || buf[1] != TOLUA_BCDUMP_HEAD2 || buf[2] != TOLUA_BCDUMP_HEAD3) return 0;
-  if (buf[3] != 1) return 0;
+  version = buf[3];
+  if (version != 1 && version != TOLUA_BCDUMP_VERSION) return 0;
 
   pos = 4;
+  flag_pos = pos;
   if (!tolua_read_uleb128(buf, len, &pos, &flags)) return 0;
+  if ((flags & ~(TOLUA_BCDUMP_F_FR2 * 2 - 1)) != 0) return 0;
 
   be = (flags & TOLUA_BCDUMP_F_BE) ? 1 : 0;
   strip = (flags & TOLUA_BCDUMP_F_STRIP) ? 1 : 0;
+  source_fr2 = (flags & TOLUA_BCDUMP_F_FR2) ? 1 : 0;
 
-  /* x86 bytecode should not carry FR2; keep behavior explicit. */
-  if (flags & TOLUA_BCDUMP_F_FR2) return 0;
+  if (source_fr2) {
+    if (target_fr2 && version == TOLUA_BCDUMP_VERSION) {
+      return 1;
+    }
+
+    return 0;
+  }
 
   if (!strip) {
     uint32_t name_len = 0;
@@ -351,9 +590,9 @@ static int tolua_remap_legacy_bytecode(uint8_t *buf, size_t len)
     size_t p = 0;
     size_t proto_end = 0;
     size_t bc_pos = 0;
+    size_t framesize_pos = 0;
     uint32_t numkgc = 0, numkn = 0, numbc = 0;
     uint32_t sizedbg = 0;
-    size_t i = 0;
 
     if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) return 0;
     if (proto_len == 0) break;
@@ -362,6 +601,7 @@ static int tolua_remap_legacy_bytecode(uint8_t *buf, size_t len)
     p = pos;
     proto_end = pos + (size_t)proto_len;
     if (p + 4 > proto_end) return 0;
+    framesize_pos = p + 2;
     p += 4; /* pflags, params, framesize, uv */
 
     if (!tolua_read_uleb128(buf, len, &p, &numkgc)) return 0;
@@ -384,22 +624,62 @@ static int tolua_remap_legacy_bytecode(uint8_t *buf, size_t len)
     bc_pos = p;
     if ((size_t)numbc > (proto_end - bc_pos) / 4) return 0;
 
-    for (i = 0; i < (size_t)numbc; i++) {
-      uint8_t *ins = buf + bc_pos + i * 4;
-      uint8_t op = be ? ins[3] : ins[0];
-      if (op < sizeof(tolua_ulua_bc_map)) {
-        uint8_t mapped = tolua_ulua_bc_map[op];
-        if (be) ins[3] = mapped;
-        else ins[0] = mapped;
+    if (!tolua_patch_proto_bytecode(buf, bc_pos, numbc, be, version == 1, target_fr2)) {
+      return 0;
+    }
+
+    if (target_fr2) {
+      uint8_t framesize = buf[framesize_pos];
+      tolua_bcshift_map map;
+      BCReg last = 0;
+      BCReg mapped = 0;
+
+      if (!tolua_collect_proto_holes(buf, bc_pos, numbc, be, 0, &map)) {
+        return 0;
       }
+
+      last = (BCReg)(framesize - 1);
+      if (!tolua_map_reg(&map, last, &mapped)) return 0;
+      if ((uint32_t)mapped + 1 > 0xff) return 0;
+      buf[framesize_pos] = (uint8_t)(mapped + 1);
     }
 
     pos = proto_end;
   }
 
-  /* Upgrade header after remap, so stock LuaJIT 2.1 can load it. */
   buf[3] = TOLUA_BCDUMP_VERSION;
+  buf[flag_pos] = (uint8_t)((flags & ~TOLUA_BCDUMP_F_FR2) | (target_fr2 ? TOLUA_BCDUMP_F_FR2 : 0));
   return 1;
+}
+
+LUALIB_API char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz)
+{
+  uint8_t *patched = NULL;
+
+  if (out_sz != NULL) *out_sz = 0;
+  if (buff == NULL || sz <= 0) return NULL;
+  if (target_fr2 != 0) target_fr2 = 1;
+
+  patched = (uint8_t *)malloc((size_t)sz);
+  if (patched == NULL) return NULL;
+
+  memcpy(patched, buff, (size_t)sz);
+  if (!tolua_convert_bytecode_inplace(patched, (size_t)sz, target_fr2)) {
+    free(patched);
+    return NULL;
+  }
+
+  if (out_sz != NULL) *out_sz = sz;
+  return (char *)patched;
+}
+#else
+LUALIB_API char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz)
+{
+  (void)buff;
+  (void)sz;
+  (void)target_fr2;
+  if (out_sz != NULL) *out_sz = 0;
+  return NULL;
 }
 #endif
 
@@ -412,13 +692,11 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
         (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
         (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3 &&
         (uint8_t)buff[3] == 1) {
-      uint8_t *patched = (uint8_t *)malloc((size_t)sz);
+      int patched_sz = 0;
+      char *patched = tolua_convertbytecode(buff, sz, 0, &patched_sz);
       if (patched != NULL) {
-        memcpy(patched, buff, (size_t)sz);
-        if (tolua_remap_legacy_bytecode(patched, (size_t)sz)) {
-          lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
-          status = luaL_loadbuffer(L, (const char *)patched, (size_t)sz, name);
-        }
+        lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
+        status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
         free(patched);
       }
     }

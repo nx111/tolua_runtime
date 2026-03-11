@@ -52,6 +52,8 @@ void tolua_pushint64(lua_State* L, int64_t n);
 void tolua_openuint64(lua_State* L);
 int  tolua_newuint64(lua_State* L);
 
+char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz);
+
 extern int toluaflags;
 
 #endif

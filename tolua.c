@@ -925,7 +925,9 @@ static void tolua_mark_proto_targets(const uint8_t *buf, size_t bc_pos, uint32_t
 
 static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                      uint32_t pc, BCReg old_first, BCReg old_last,
-                                     const uint8_t *targets, uint8_t *selected, int *out_min_window)
+                                     const uint8_t *targets, uint8_t *selected, int *out_min_window,
+                                     uint32_t *out_interference_pc, BCOp *out_interference_op,
+                                     BCReg *out_interference_reg)
 {
   uint8_t live[BCMAX_A + 1];
   int min_window = (int)pc;
@@ -934,6 +936,9 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
 
   memset(selected, 0, (size_t)numbc);
   memset(live, 0, sizeof(live));
+  if (out_interference_pc) *out_interference_pc = UINT32_MAX;
+  if (out_interference_op) *out_interference_op = BC__MAX;
+  if (out_interference_reg) *out_interference_reg = 0;
 
   for (scan = old_first; scan <= old_last; scan++) {
     live[scan] = 1;
@@ -1019,6 +1024,9 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
         if (!live[reg]) continue;
         if (tolua_ins_reads_reg(ins_op, ins, reg) ||
             tolua_ins_writes_reg(ins_op, ins, reg)) {
+          if (out_interference_pc) *out_interference_pc = (uint32_t)scan;
+          if (out_interference_op) *out_interference_op = ins_op;
+          if (out_interference_reg) *out_interference_reg = reg;
 #ifdef TOLUA_REPACK_DEBUG
           fprintf(stderr,
                   "[repack] slice fail pc=%u interference-at=%d op=%s reg=%u range=[%u,%u]\n",
@@ -1583,9 +1591,10 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
 
   if (tolua_select_repack_slice(buf, bc_pos, numbc, be, consumer_pc, consumer_base,
                                 consumer_prefix_last, targets, consumer_selected,
-                                &consumer_min_window) &&
+                                &consumer_min_window, NULL, NULL, NULL) &&
       tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc, producer_base, producer_last,
-                                targets, producer_selected, &producer_min_window)) {
+                                targets, producer_selected, &producer_min_window,
+                                NULL, NULL, NULL)) {
     int start_window = consumer_min_window < producer_min_window ? consumer_min_window : producer_min_window;
 
     if (consumer_nres == 1) {
@@ -1677,6 +1686,9 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   uint8_t *queue_state = NULL;
   size_t queue_cap = (size_t)numbc * 2;
   size_t head = 0, tail = 0;
+  uint32_t slice_interference_pc = UINT32_MAX;
+  BCOp slice_interference_op = BC__MAX;
+  BCReg slice_interference_reg = 0;
   int min_window = (int)pc;
   int scan = 0;
   int status = TOLUA_BCCONV_OK;
@@ -1719,7 +1731,27 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   }
 
   if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_base, old_last,
-                                 targets, selected, &min_window)) {
+                                 targets, selected, &min_window,
+                                 &slice_interference_pc, &slice_interference_op,
+                                 &slice_interference_reg)) {
+    if (slice_interference_pc != UINT32_MAX &&
+        slice_interference_pc < pc &&
+        slice_interference_op == BC_CALL) {
+      BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)slice_interference_pc * 4, be);
+      if (bc_b(interfering) == 2 && bc_c(interfering) > 1 && !targets[slice_interference_pc]) {
+        int inner_changed = 0;
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "retry via interfering single-result call at pc=%u reg=%u",
+                         (unsigned int)slice_interference_pc,
+                         (unsigned int)slice_interference_reg);
+        status = tolua_try_repack_call(buf, bc_pos, numbc, be, slice_interference_pc,
+                                       framesize_io, targets, map, ctx, &inner_changed);
+        if (status != TOLUA_BCCONV_OK || inner_changed) {
+          *changed = inner_changed;
+          goto cleanup;
+        }
+      }
+    }
     TOLUA_REPACK_LOG(ctx, pc, "generic slice reject a=%u last=%u",
                      (unsigned int)old_base, (unsigned int)old_last);
     goto cleanup;
@@ -1870,7 +1902,8 @@ static int tolua_try_repack_cat(uint8_t *buf, size_t bc_pos, uint32_t numbc, int
   if (!selected) return TOLUA_BCCONV_ERR_OUT_OF_MEMORY;
 
   if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_first, old_last,
-                                 targets, selected, &min_window)) {
+                                 targets, selected, &min_window,
+                                 NULL, NULL, NULL)) {
     free(selected);
     return TOLUA_BCCONV_OK;
   }
@@ -1922,7 +1955,8 @@ static int tolua_try_repack_ret(uint8_t *buf, size_t bc_pos, uint32_t numbc, int
   if (!selected) return TOLUA_BCCONV_ERR_OUT_OF_MEMORY;
 
   if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_first, old_last,
-                                 targets, selected, &min_window)) {
+                                 targets, selected, &min_window,
+                                 NULL, NULL, NULL)) {
     free(selected);
     return TOLUA_BCCONV_OK;
   }
@@ -1999,7 +2033,8 @@ static int tolua_try_repack_fori(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   if (!selected) return TOLUA_BCCONV_ERR_OUT_OF_MEMORY;
 
   if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_base, (BCReg)(old_base + 2),
-                                 targets, selected, &min_window)) {
+                                 targets, selected, &min_window,
+                                 NULL, NULL, NULL)) {
     free(selected);
     return TOLUA_BCCONV_OK;
   }

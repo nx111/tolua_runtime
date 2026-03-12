@@ -584,6 +584,27 @@ static int tolua_get_simple_repack_def_reg(BCOp op, BCIns ins, BCReg *out)
   return 1;
 }
 
+static int tolua_get_slice_def_reg(BCOp op, BCIns ins, BCReg old_first, BCReg old_last, BCReg *out)
+{
+  if (tolua_get_simple_repack_def_reg(op, ins, out)) return 1;
+
+  switch (op) {
+    case BC_CALL: {
+      BCReg a = bc_a(ins);
+      BCReg last = (BCReg)(a + bc_c(ins) - 1);
+
+      if (bc_b(ins) != 2) return 0;
+      if (a != old_first) return 0;
+      if (!tolua_reg_in_closed_range(a, old_first, old_last)) return 0;
+      if (!tolua_reg_in_closed_range(last, old_first, old_last)) return 0;
+      *out = a;
+      return 1;
+    }
+    default:
+      return 0;
+  }
+}
+
 static int tolua_ins_reads_reg(BCOp op, BCIns ins, BCReg reg)
 {
   BCReg a = bc_a(ins);
@@ -924,7 +945,7 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
     BCOp ins_op = bc_op(ins);
     BCReg def = 0;
 
-    if (!tolua_get_simple_repack_def_reg(ins_op, ins, &def) || !live[def]) continue;
+    if (!tolua_get_slice_def_reg(ins_op, ins, old_first, old_last, &def) || !live[def]) continue;
 
     selected[scan] = 1;
     min_window = scan;
@@ -943,7 +964,20 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
     }
   }
 
-  if (live_count != 0) return 0;
+  if (live_count != 0) {
+#ifdef TOLUA_REPACK_DEBUG
+    BCReg reg = 0;
+    for (reg = old_first; reg <= old_last; reg++) {
+      if (live[reg]) {
+        fprintf(stderr, "[repack] slice fail pc=%u unresolved reg=%u range=[%u,%u]\n",
+                (unsigned int)pc, (unsigned int)reg,
+                (unsigned int)old_first, (unsigned int)old_last);
+        break;
+      }
+    }
+#endif
+    return 0;
+  }
 
   memset(live, 0, sizeof(live));
   for (scan = old_first; scan <= old_last; scan++) {
@@ -954,13 +988,27 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
     BCOp ins_op = bc_op(ins);
 
-    if (scan != min_window && targets[scan]) return 0;
+    if (scan != min_window && targets[scan]) {
+#ifdef TOLUA_REPACK_DEBUG
+      fprintf(stderr, "[repack] slice fail pc=%u target-at=%d range=[%u,%u]\n",
+              (unsigned int)pc, scan,
+              (unsigned int)old_first, (unsigned int)old_last);
+#endif
+      return 0;
+    }
 
     if (selected[scan]) {
       BCReg def = 0;
       BCReg reg = 0;
 
-      if (!tolua_get_simple_repack_def_reg(ins_op, ins, &def)) return 0;
+      if (!tolua_get_slice_def_reg(ins_op, ins, old_first, old_last, &def)) {
+#ifdef TOLUA_REPACK_DEBUG
+        fprintf(stderr, "[repack] slice fail pc=%u selected-nondef-at=%d op=%s range=[%u,%u]\n",
+                (unsigned int)pc, scan, tolua_bc_opname(ins_op),
+                (unsigned int)old_first, (unsigned int)old_last);
+#endif
+        return 0;
+      }
       live[def] = 0;
       for (reg = old_first; reg <= old_last; reg++) {
         if (tolua_ins_reads_reg(ins_op, ins, reg)) live[reg] = 1;
@@ -971,6 +1019,12 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
         if (!live[reg]) continue;
         if (tolua_ins_reads_reg(ins_op, ins, reg) ||
             tolua_ins_writes_reg(ins_op, ins, reg)) {
+#ifdef TOLUA_REPACK_DEBUG
+          fprintf(stderr,
+                  "[repack] slice fail pc=%u interference-at=%d op=%s reg=%u range=[%u,%u]\n",
+                  (unsigned int)pc, scan, tolua_bc_opname(ins_op), (unsigned int)reg,
+                  (unsigned int)old_first, (unsigned int)old_last);
+#endif
           return 0;
         }
       }

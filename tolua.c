@@ -1156,6 +1156,52 @@ static int tolua_hole_breaks_prior_insns(const uint8_t *buf, size_t bc_pos, uint
   return 0;
 }
 
+static int tolua_hole_breaks_future_iterator_setup(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                   uint32_t pc, BCReg hole_reg, uint32_t skip_pc)
+{
+  uint32_t scan = 0;
+
+  for (scan = pc + 1; scan < numbc; scan++) {
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+    BCReg a = 0;
+
+    if (scan == skip_pc) continue;
+
+    ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    op = bc_op(ins);
+    a = bc_a(ins);
+
+    switch (op) {
+      case BC_CALL:
+        if (bc_b(ins) == 0 || bc_b(ins) > 2) {
+          if (bc_b(ins) != 0 &&
+              hole_reg >= (BCReg)(a + 1) && hole_reg < (BCReg)(a + bc_b(ins) - 1)) {
+            return 1;
+          }
+          if (bc_c(ins) > 1 &&
+              hole_reg >= (BCReg)(a + 1) && hole_reg < (BCReg)(a + bc_c(ins) - 1)) {
+            return 1;
+          }
+        }
+        break;
+      case BC_ITERC:
+        if (bc_b(ins) != 0 &&
+            hole_reg >= (BCReg)(a + 1) && hole_reg < (BCReg)(a + bc_b(ins) - 1)) {
+          return 1;
+        }
+        if (hole_reg >= (BCReg)(a + 1) && hole_reg < (BCReg)(a + bc_c(ins) - 1)) {
+          return 1;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return 0;
+}
+
 static int tolua_find_call_repack_base(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                        uint32_t pc, BCIns call, BCOp op, BCReg old_base,
                                        BCReg old_last, int min_window, uint8_t framesize,
@@ -1193,6 +1239,11 @@ static int tolua_find_call_repack_base(const uint8_t *buf, size_t bc_pos, uint32
 
       if (!map->hole[cand] &&
           tolua_hole_breaks_prior_insns(buf, bc_pos, numbc, be, pc, cand, pc)) {
+        continue;
+      }
+
+      if (state_mask && cand < framesize &&
+          tolua_hole_breaks_future_iterator_setup(buf, bc_pos, numbc, be, pc, cand, pc)) {
         continue;
       }
 

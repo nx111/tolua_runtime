@@ -1784,6 +1784,12 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
       uint8_t next_state = cur_state;
       int cur_in_slice = 0;
 
+      /* A non-target immediate successor is always reached through the current call. */
+      if (cur_pc == pc + 1 && cur_pc < numbc && !targets[cur_pc]) {
+        cur_state = 0;
+        mask = 1u;
+      }
+
       if ((state_mask[cur_pc] & mask) != 0) continue;
       state_mask[cur_pc] |= mask;
 

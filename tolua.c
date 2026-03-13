@@ -1921,6 +1921,47 @@ static int tolua_try_repack_generic_for_call_setup(uint8_t *buf, size_t bc_pos, 
   return TOLUA_BCCONV_OK;
 }
 
+static int tolua_find_generic_for_call_from_iterc(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                  uint32_t iter_pc, BCIns iter, uint32_t *out_call_pc)
+{
+  uint32_t body_pc = 0;
+  uint32_t call_pc = 0;
+  uint32_t matched_iter_pc = 0;
+  uint32_t loop_end = 0;
+  BCReg cluster_last = 0;
+  BCIns iterl = 0;
+  BCOp iterl_op = BC__MAX;
+  BCIns call = 0;
+
+  if (bc_op(iter) != BC_ITERC || bc_b(iter) != 3 || bc_c(iter) != 3) return 0;
+  if (iter_pc + 1 >= numbc) return 0;
+
+  iterl = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(iter_pc + 1) * 4, be);
+  iterl_op = bc_op(iterl);
+  switch (iterl_op) {
+    case BC_ITERL:
+    case BC_IITERL:
+    case BC_JITERL:
+      break;
+    default:
+      return 0;
+  }
+
+  if (!tolua_get_jump_target(iterl_op, iterl, iter_pc + 1, numbc, &body_pc)) return 0;
+  if (body_pc < 2) return 0;
+
+  call_pc = body_pc - 2;
+  call = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)call_pc * 4, be);
+  if (!tolua_find_generic_for_call_setup(buf, bc_pos, numbc, be, call_pc, call,
+                                         &matched_iter_pc, &loop_end, &cluster_last)) {
+    return 0;
+  }
+  if (matched_iter_pc != iter_pc) return 0;
+
+  *out_call_pc = call_pc;
+  return 1;
+}
+
 static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                  uint32_t pc, uint8_t *framesize_io, const uint8_t *targets,
                                  const tolua_bcshift_map *map,
@@ -2145,6 +2186,25 @@ cleanup:
   free(state_mask);
   free(selected);
   return status;
+}
+
+static int tolua_try_repack_iterc(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                  uint32_t pc, uint8_t *framesize_io, const uint8_t *targets,
+                                  const tolua_bcshift_map *map,
+                                  const tolua_bcdebug_ctx *ctx, int *changed)
+{
+  BCIns iter = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  uint32_t call_pc = 0;
+  BCIns call = 0;
+
+  *changed = 0;
+  if (!tolua_find_generic_for_call_from_iterc(buf, bc_pos, numbc, be, pc, iter, &call_pc)) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  call = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)call_pc * 4, be);
+  return tolua_try_repack_generic_for_call_setup(buf, bc_pos, numbc, be, call_pc, call,
+                                                 framesize_io, targets, map, ctx, changed);
 }
 
 static int tolua_try_repack_cat(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
@@ -2462,6 +2522,12 @@ static int tolua_try_repack_proto_calls(uint8_t *buf, size_t bc_pos, uint32_t nu
       } else if (op == BC_FORI &&
                  tolua_find_range_hole(&map, a, (int)a + 3, &hole_reg)) {
         status = tolua_try_repack_fori(buf, bc_pos, numbc, be, pc, framesize_io, targets, &changed);
+      } else if (op == BC_ITERC &&
+                 ((bc_b(ins) >= 2 &&
+                   tolua_find_range_hole(&map, (int)a + 1, (int)a + bc_b(ins) - 2, &hole_reg)) ||
+                  tolua_find_range_hole(&map, (int)a + 1, (int)a + bc_c(ins) - 1, &hole_reg))) {
+        status = tolua_try_repack_iterc(buf, bc_pos, numbc, be, pc, framesize_io, targets, &map,
+                                        ctx, &changed);
       }
 
       if (changed && status == TOLUA_BCCONV_OK && op == BC_CAT) {

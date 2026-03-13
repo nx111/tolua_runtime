@@ -929,6 +929,23 @@ static void tolua_mark_proto_targets(const uint8_t *buf, size_t bc_pos, uint32_t
   }
 }
 
+static int tolua_target_has_external_entry(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                           int first_pc, uint32_t stop_pc, uint32_t target_pc)
+{
+  uint32_t pc = 0;
+
+  for (pc = 0; pc < numbc; pc++) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+    uint32_t target = 0;
+
+    if (!tolua_get_jump_target(bc_op(ins), ins, pc, numbc, &target)) continue;
+    if (target != target_pc) continue;
+    if (pc < (uint32_t)first_pc || pc >= stop_pc) return 1;
+  }
+
+  return 0;
+}
+
 static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                      uint32_t pc, BCReg old_first, BCReg old_last,
                                      const uint8_t *targets, uint8_t *selected, int *out_min_window,
@@ -999,7 +1016,8 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
     BCOp ins_op = bc_op(ins);
 
-    if (scan != min_window && targets[scan]) {
+    if (scan != min_window && targets[scan] &&
+        tolua_target_has_external_entry(buf, bc_pos, numbc, be, min_window, pc, (uint32_t)scan)) {
 #ifdef TOLUA_REPACK_DEBUG
       fprintf(stderr, "[repack] slice fail pc=%u target-at=%d range=[%u,%u]\n",
               (unsigned int)pc, scan,
@@ -1088,7 +1106,8 @@ static int tolua_retry_repack_slice_with_readonly_interference(const uint8_t *bu
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
     BCOp ins_op = bc_op(ins);
 
-    if (scan != min_window && targets[scan]) {
+    if (scan != min_window && targets[scan] &&
+        tolua_target_has_external_entry(buf, bc_pos, numbc, be, min_window, pc, (uint32_t)scan)) {
 #ifdef TOLUA_REPACK_DEBUG
       fprintf(stderr, "[repack] readonly slice retry fail pc=%u target-at=%d range=[%u,%u]\n",
               (unsigned int)pc, scan, (unsigned int)old_first, (unsigned int)old_last);

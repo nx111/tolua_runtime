@@ -1774,6 +1774,119 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
   return TOLUA_BCCONV_OK;
 }
 
+static int tolua_try_repack_adjacent_cat_call_chain(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                    uint32_t producer_pc, BCIns producer,
+                                                    uint32_t consumer_pc, BCIns consumer,
+                                                    uint8_t *framesize_io, const uint8_t *targets,
+                                                    const tolua_bcshift_map *map,
+                                                    const tolua_bcdebug_ctx *ctx, int *changed)
+{
+  BCReg producer_first = bc_b(producer);
+  BCReg producer_last = bc_c(producer);
+  BCReg producer_dest = bc_a(producer);
+  BCReg consumer_base = bc_a(consumer);
+  BCReg consumer_nargs = 0;
+  BCReg consumer_last = 0;
+  BCReg consumer_prefix_last = 0;
+  BCReg new_consumer_base = 0;
+  BCReg new_consumer_last = 0;
+  BCReg new_producer_first = 0;
+  BCReg new_producer_last = 0;
+  uint8_t *consumer_selected = NULL;
+  uint8_t *producer_selected = NULL;
+  int consumer_min_window = (int)consumer_pc;
+  int producer_min_window = (int)producer_pc;
+  int start_window = 0;
+  int scan = 0;
+  int hole_reg = -1;
+
+  *changed = 0;
+
+  if (bc_op(producer) != BC_CAT || bc_op(consumer) != BC_CALL) return TOLUA_BCCONV_OK;
+  if (bc_b(consumer) != 1 || bc_c(consumer) <= 1) return TOLUA_BCCONV_OK;
+  if (producer_last < producer_first) return TOLUA_BCCONV_OK;
+  if (producer_dest != producer_first) return TOLUA_BCCONV_OK;
+
+  consumer_nargs = (BCReg)(bc_c(consumer) - 1);
+  consumer_last = (BCReg)(consumer_base + consumer_nargs);
+  if (producer_dest != consumer_last) return TOLUA_BCCONV_OK;
+
+  consumer_prefix_last = (BCReg)(consumer_last - 1);
+  new_consumer_base = *framesize_io;
+  new_consumer_last = (BCReg)(new_consumer_base + consumer_nargs);
+  if (new_consumer_last > BCMAX_A) return TOLUA_BCCONV_OK;
+
+  new_producer_first = new_consumer_last;
+  new_producer_last = (BCReg)(new_producer_first + (producer_last - producer_first));
+  if (new_producer_last > BCMAX_A) return TOLUA_BCCONV_OK;
+
+  if (tolua_find_range_hole(map, (int)new_consumer_base + 1,
+                            (int)new_consumer_base + bc_c(consumer) - 1, &hole_reg)) {
+    return TOLUA_BCCONV_OK;
+  }
+  if (tolua_find_range_hole(map, new_producer_first, new_producer_last, &hole_reg)) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  consumer_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!consumer_selected || !producer_selected) {
+    free(producer_selected);
+    free(consumer_selected);
+    return tolua_failbytecodeproto(ctx, consumer_pc, consumer, BC_CALL, TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate adjacent cat/call repack buffers");
+  }
+
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, consumer_pc, consumer_base,
+                                 consumer_prefix_last, targets, consumer_selected,
+                                 &consumer_min_window, NULL, NULL, NULL) ||
+      !tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc, producer_first, producer_last,
+                                 targets, producer_selected, &producer_min_window,
+                                 NULL, NULL, NULL)) {
+    free(producer_selected);
+    free(consumer_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  start_window = consumer_min_window < producer_min_window ? consumer_min_window : producer_min_window;
+  for (scan = start_window; scan < (int)consumer_pc; scan++) {
+    BCIns cur = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    BCOp cur_op = bc_op(cur);
+
+    if (consumer_selected[scan]) {
+      tolua_repack_remap_reg_range(&cur, cur_op, consumer_base, consumer_prefix_last, new_consumer_base);
+    }
+    if (producer_selected[scan]) {
+      tolua_repack_remap_reg_range(&cur, cur_op, producer_first, producer_last, new_producer_first);
+    }
+
+    tolua_write_ins(buf + bc_pos + (size_t)scan * 4, (uint32_t)cur, be);
+    if (consumer_selected[scan]) {
+      tolua_sync_open_tsetm_after_repack(buf, bc_pos, numbc, be, (uint32_t)scan, cur,
+                                         consumer_base, consumer_prefix_last, new_consumer_base);
+    }
+    if (producer_selected[scan]) {
+      tolua_sync_open_tsetm_after_repack(buf, bc_pos, numbc, be, (uint32_t)scan, cur,
+                                         producer_first, producer_last, new_producer_first);
+    }
+  }
+
+  setbc_a(&consumer, new_consumer_base);
+  tolua_write_ins(buf + bc_pos + (size_t)consumer_pc * 4, (uint32_t)consumer, be);
+  *framesize_io = (uint8_t)(new_producer_last + 1);
+  *changed = 1;
+  TOLUA_REPACK_LOG(ctx, consumer_pc,
+                   "adjacent cat/call success cat_old=[%u,%u] cat_new=[%u,%u] call_old=[%u,%u] call_new=[%u,%u]",
+                   (unsigned int)producer_first, (unsigned int)producer_last,
+                   (unsigned int)new_producer_first, (unsigned int)new_producer_last,
+                   (unsigned int)consumer_base, (unsigned int)consumer_last,
+                   (unsigned int)new_consumer_base, (unsigned int)new_consumer_last);
+
+  free(producer_selected);
+  free(consumer_selected);
+  return TOLUA_BCCONV_OK;
+}
+
 static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                  uint32_t pc, uint8_t *framesize_io, const uint8_t *targets,
                                  const tolua_bcshift_map *map,
@@ -2023,6 +2136,9 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
 
   if (op == BC_CALL && pc > 0) {
     BCIns producer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    status = tolua_try_repack_adjacent_cat_call_chain(buf, bc_pos, numbc, be, pc - 1, producer, pc, call,
+                                                      framesize_io, targets, map, ctx, changed);
+    if (status != TOLUA_BCCONV_OK || *changed) return status;
     status = tolua_try_repack_adjacent_call_chain(buf, bc_pos, numbc, be, pc - 1, producer, pc, call,
                                                   framesize_io, targets, ctx, changed);
     if (status != TOLUA_BCCONV_OK || *changed) return status;

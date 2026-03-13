@@ -2703,7 +2703,7 @@ static int tolua_try_repack_call_result_copy(uint8_t *buf, size_t bc_pos, uint32
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
-  if (bc_op(producer) != BC_CALL || bc_b(producer) != 2 || bc_c(producer) <= 1) {
+  if (bc_op(producer) != BC_CALL || bc_b(producer) != 2 || bc_c(producer) == 0) {
     return TOLUA_BCCONV_OK;
   }
   if (producer_pc + 1 >= numbc) return TOLUA_BCCONV_OK;
@@ -2825,7 +2825,7 @@ static int tolua_try_repack_hole_producer_result_copy(uint8_t *buf, size_t bc_po
       if (producer_op == BC_CALL &&
           !targets[producer_pc] &&
           bc_b(producer) == 2 &&
-          bc_c(producer) != 0) {
+          bc_c(producer) > 1) {
         TOLUA_REPACK_LOG(ctx, consumer_pc,
                          "retry via hole producer call at pc=%u reg=%u",
                          (unsigned int)producer_pc, (unsigned int)hole_reg);
@@ -2971,7 +2971,7 @@ static int tolua_try_repack_generic_for_call_setup(uint8_t *buf, size_t bc_pos, 
           slice_interference_pc < pc &&
           slice_interference_op == BC_CALL) {
         BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)slice_interference_pc * 4, be);
-      if (bc_b(interfering) == 2 && bc_c(interfering) != 0 && !targets[slice_interference_pc]) {
+      if (bc_b(interfering) == 2 && bc_c(interfering) > 1 && !targets[slice_interference_pc]) {
         int inner_changed = 0;
         TOLUA_REPACK_LOG(ctx, pc,
                          "generic-for retry via interfering single-result call at pc=%u reg=%u",
@@ -3244,49 +3244,51 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
             goto cleanup;
           }
         }
-        if (op == BC_CALL &&
-            bc_b(call) == 2 &&
-            consumer_hole_reg >= 0 &&
-            bc_a(interfering) == (BCReg)consumer_hole_reg) {
-          status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
-                                                     slice_interference_pc, interfering, pc,
-                                                     framesize_io, targets, map, ctx,
-                                                     &inner_changed);
+        if (bc_c(interfering) > 1) {
+          if (op == BC_CALL &&
+              bc_b(call) == 2 &&
+              consumer_hole_reg >= 0 &&
+              bc_a(interfering) == (BCReg)consumer_hole_reg) {
+            status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                       slice_interference_pc, interfering, pc,
+                                                       framesize_io, targets, map, ctx,
+                                                       &inner_changed);
+            if (status != TOLUA_BCCONV_OK || inner_changed) {
+              *changed = inner_changed;
+              goto cleanup;
+            }
+          }
+          status = tolua_try_repack_first_arg_call_chain(buf, bc_pos, numbc, be,
+                                                         slice_interference_pc, interfering,
+                                                         pc, call, framesize_io, targets,
+                                                         map, ctx, &inner_changed);
           if (status != TOLUA_BCCONV_OK || inner_changed) {
             *changed = inner_changed;
             goto cleanup;
           }
-        }
-        status = tolua_try_repack_first_arg_call_chain(buf, bc_pos, numbc, be,
-                                                       slice_interference_pc, interfering,
-                                                       pc, call, framesize_io, targets,
-                                                       map, ctx, &inner_changed);
-        if (status != TOLUA_BCCONV_OK || inner_changed) {
-          *changed = inner_changed;
-          goto cleanup;
-        }
-        if (op == BC_CALL &&
-            bc_b(call) == 1 &&
-            consumer_hole_reg >= 0 &&
-            bc_a(interfering) == (BCReg)consumer_hole_reg) {
-          status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
-                                                     slice_interference_pc, interfering, pc,
-                                                     framesize_io, targets, map, ctx,
-                                                     &inner_changed);
+          if (op == BC_CALL &&
+              bc_b(call) == 1 &&
+              consumer_hole_reg >= 0 &&
+              bc_a(interfering) == (BCReg)consumer_hole_reg) {
+            status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                       slice_interference_pc, interfering, pc,
+                                                       framesize_io, targets, map, ctx,
+                                                       &inner_changed);
+            if (status != TOLUA_BCCONV_OK || inner_changed) {
+              *changed = inner_changed;
+              goto cleanup;
+            }
+          }
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "retry via interfering single-result call at pc=%u reg=%u",
+                           (unsigned int)slice_interference_pc,
+                           (unsigned int)slice_interference_reg);
+          status = tolua_try_repack_call(buf, bc_pos, numbc, be, slice_interference_pc,
+                                         framesize_io, targets, map, ctx, &inner_changed);
           if (status != TOLUA_BCCONV_OK || inner_changed) {
             *changed = inner_changed;
             goto cleanup;
           }
-        }
-        TOLUA_REPACK_LOG(ctx, pc,
-                         "retry via interfering single-result call at pc=%u reg=%u",
-                         (unsigned int)slice_interference_pc,
-                         (unsigned int)slice_interference_reg);
-        status = tolua_try_repack_call(buf, bc_pos, numbc, be, slice_interference_pc,
-                                       framesize_io, targets, map, ctx, &inner_changed);
-        if (status != TOLUA_BCCONV_OK || inner_changed) {
-          *changed = inner_changed;
-          goto cleanup;
         }
       }
     } else if (slice_interference_pc != UINT32_MAX &&
@@ -3307,7 +3309,7 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
                readonly_interference_pc < pc &&
       readonly_interference_op == BC_CALL) {
       BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)readonly_interference_pc * 4, be);
-      if (bc_b(interfering) == 2 && bc_c(interfering) != 0 && !targets[readonly_interference_pc]) {
+      if (bc_b(interfering) == 2 && bc_c(interfering) > 1 && !targets[readonly_interference_pc]) {
         inner_changed = 0;
         if (readonly_interference_pc + 1 == pc &&
             bc_c(interfering) == 1) {
@@ -3320,49 +3322,51 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
             goto cleanup;
           }
         }
-        if (op == BC_CALL &&
-            bc_b(call) == 2 &&
-            consumer_hole_reg >= 0 &&
-            bc_a(interfering) == (BCReg)consumer_hole_reg) {
-          status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
-                                                     readonly_interference_pc, interfering, pc,
-                                                     framesize_io, targets, map, ctx,
-                                                     &inner_changed);
+        if (bc_c(interfering) > 1) {
+          if (op == BC_CALL &&
+              bc_b(call) == 2 &&
+              consumer_hole_reg >= 0 &&
+              bc_a(interfering) == (BCReg)consumer_hole_reg) {
+            status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                       readonly_interference_pc, interfering, pc,
+                                                       framesize_io, targets, map, ctx,
+                                                       &inner_changed);
+            if (status != TOLUA_BCCONV_OK || inner_changed) {
+              *changed = inner_changed;
+              goto cleanup;
+            }
+          }
+          status = tolua_try_repack_first_arg_call_chain(buf, bc_pos, numbc, be,
+                                                         readonly_interference_pc, interfering,
+                                                         pc, call, framesize_io, targets,
+                                                         map, ctx, &inner_changed);
           if (status != TOLUA_BCCONV_OK || inner_changed) {
             *changed = inner_changed;
             goto cleanup;
           }
-        }
-        status = tolua_try_repack_first_arg_call_chain(buf, bc_pos, numbc, be,
-                                                       readonly_interference_pc, interfering,
-                                                       pc, call, framesize_io, targets,
-                                                       map, ctx, &inner_changed);
-        if (status != TOLUA_BCCONV_OK || inner_changed) {
-          *changed = inner_changed;
-          goto cleanup;
-        }
-        if (op == BC_CALL &&
-            bc_b(call) == 1 &&
-            consumer_hole_reg >= 0 &&
-            bc_a(interfering) == (BCReg)consumer_hole_reg) {
-          status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
-                                                     readonly_interference_pc, interfering, pc,
-                                                     framesize_io, targets, map, ctx,
-                                                     &inner_changed);
+          if (op == BC_CALL &&
+              bc_b(call) == 1 &&
+              consumer_hole_reg >= 0 &&
+              bc_a(interfering) == (BCReg)consumer_hole_reg) {
+            status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                       readonly_interference_pc, interfering, pc,
+                                                       framesize_io, targets, map, ctx,
+                                                       &inner_changed);
+            if (status != TOLUA_BCCONV_OK || inner_changed) {
+              *changed = inner_changed;
+              goto cleanup;
+            }
+          }
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "readonly retry via interfering single-result call at pc=%u reg=%u",
+                           (unsigned int)readonly_interference_pc,
+                           (unsigned int)readonly_interference_reg);
+          status = tolua_try_repack_call(buf, bc_pos, numbc, be, readonly_interference_pc,
+                                         framesize_io, targets, map, ctx, &inner_changed);
           if (status != TOLUA_BCCONV_OK || inner_changed) {
             *changed = inner_changed;
             goto cleanup;
           }
-        }
-        TOLUA_REPACK_LOG(ctx, pc,
-                         "readonly retry via interfering single-result call at pc=%u reg=%u",
-                         (unsigned int)readonly_interference_pc,
-                         (unsigned int)readonly_interference_reg);
-        status = tolua_try_repack_call(buf, bc_pos, numbc, be, readonly_interference_pc,
-                                       framesize_io, targets, map, ctx, &inner_changed);
-        if (status != TOLUA_BCCONV_OK || inner_changed) {
-          *changed = inner_changed;
-          goto cleanup;
         }
       }
     }

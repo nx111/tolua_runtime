@@ -2038,6 +2038,8 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
                                  targets, selected, &min_window,
                                  &slice_interference_pc, &slice_interference_op,
                                  &slice_interference_reg)) {
+    int readonly_retry_ok = 0;
+
     if (slice_interference_pc != UINT32_MAX &&
         slice_interference_pc < pc &&
         slice_interference_op == BC_CALL) {
@@ -2055,10 +2057,43 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
           goto cleanup;
         }
       }
+    } else if (slice_interference_pc != UINT32_MAX &&
+               slice_interference_pc < pc &&
+               tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc,
+                                                                   old_base, old_last, targets,
+                                                                   selected, &min_window,
+                                                                   &readonly_interference_pc,
+                                                                   &readonly_interference_op,
+                                                                   &readonly_interference_reg)) {
+      readonly_retry_ok = 1;
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "slice allowed read-only interference at pc=%u op=%s reg=%u",
+                       (unsigned int)slice_interference_pc,
+                       tolua_bc_opname(slice_interference_op),
+                       (unsigned int)slice_interference_reg);
+    } else if (readonly_interference_pc != UINT32_MAX &&
+               readonly_interference_pc < pc &&
+               readonly_interference_op == BC_CALL) {
+      BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)readonly_interference_pc * 4, be);
+      if (bc_b(interfering) == 2 && bc_c(interfering) > 1 && !targets[readonly_interference_pc]) {
+        int inner_changed = 0;
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "readonly retry via interfering single-result call at pc=%u reg=%u",
+                         (unsigned int)readonly_interference_pc,
+                         (unsigned int)readonly_interference_reg);
+        status = tolua_try_repack_call(buf, bc_pos, numbc, be, readonly_interference_pc,
+                                       framesize_io, targets, map, ctx, &inner_changed);
+        if (status != TOLUA_BCCONV_OK || inner_changed) {
+          *changed = inner_changed;
+          goto cleanup;
+        }
+      }
     }
-    TOLUA_REPACK_LOG(ctx, pc, "generic slice reject a=%u last=%u",
-                     (unsigned int)old_base, (unsigned int)old_last);
-    goto cleanup;
+    if (!readonly_retry_ok) {
+      TOLUA_REPACK_LOG(ctx, pc, "generic slice reject a=%u last=%u",
+                       (unsigned int)old_base, (unsigned int)old_last);
+      goto cleanup;
+    }
   }
 
   if (nres == 1) {

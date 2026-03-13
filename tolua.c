@@ -1922,11 +1922,18 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
   size_t consumer_head = 0, consumer_tail = 0;
   int consumer_min_window = (int)consumer_pc;
   int producer_min_window = (int)producer_pc;
+  uint32_t consumer_slice_interference_pc = UINT32_MAX;
+  BCOp consumer_slice_interference_op = BC__MAX;
+  BCReg consumer_slice_interference_reg = 0;
+  uint32_t producer_slice_interference_pc = UINT32_MAX;
+  BCOp producer_slice_interference_op = BC__MAX;
+  BCReg producer_slice_interference_reg = 0;
   int start_window = 0;
   int consumer_flow_failed = 0;
   int consumer_rewrite_failed = 0;
   int hole_reg = -1;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   TOLUA_REPACK_LOG(ctx, consumer_pc,
@@ -2037,10 +2044,14 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
 
   if (tolua_select_repack_slice(buf, bc_pos, numbc, be, consumer_pc, consumer_base,
                                 consumer_prefix_last, targets, consumer_selected,
-                                &consumer_min_window, NULL, NULL, NULL) &&
+                                &consumer_min_window, &consumer_slice_interference_pc,
+                                &consumer_slice_interference_op,
+                                &consumer_slice_interference_reg) &&
       tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc, producer_base, producer_last,
                                 targets, producer_selected, &producer_min_window,
-                                NULL, NULL, NULL)) {
+                                &producer_slice_interference_pc,
+                                &producer_slice_interference_op,
+                                &producer_slice_interference_reg)) {
     start_window = consumer_min_window < producer_min_window ? consumer_min_window : producer_min_window;
     TOLUA_REPACK_LOG(ctx, consumer_pc, "adjacent chain slices ready start_window=%d",
                      start_window);
@@ -2226,6 +2237,62 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
     }
   }
   else {
+    int inner_changed = 0;
+
+    if (consumer_slice_interference_pc != UINT32_MAX &&
+        consumer_slice_interference_pc < consumer_pc &&
+        consumer_slice_interference_op == BC_CALL) {
+      BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)consumer_slice_interference_pc * 4, be);
+      if (bc_b(interfering) == 2 && bc_c(interfering) != 0 &&
+          !targets[consumer_slice_interference_pc]) {
+        TOLUA_REPACK_LOG(ctx, consumer_pc,
+                         "adjacent chain retry via consumer blocker call at pc=%u reg=%u",
+                         (unsigned int)consumer_slice_interference_pc,
+                         (unsigned int)consumer_slice_interference_reg);
+        status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                   consumer_slice_interference_pc, interfering,
+                                                   consumer_pc, framesize_io, targets, map, ctx,
+                                                   &inner_changed);
+        if (status != TOLUA_BCCONV_OK || inner_changed) {
+          *changed = inner_changed;
+          free(consumer_queue_state);
+          free(consumer_queue_pc);
+          free(consumer_rewrite);
+          free(consumer_state_mask);
+          free(producer_selected);
+          free(consumer_selected);
+          return status;
+        }
+      }
+    }
+
+    if (producer_slice_interference_pc != UINT32_MAX &&
+        producer_slice_interference_pc < producer_pc &&
+        producer_slice_interference_op == BC_CALL) {
+      BCIns interfering = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)producer_slice_interference_pc * 4, be);
+      if (bc_b(interfering) == 2 && bc_c(interfering) != 0 &&
+          !targets[producer_slice_interference_pc]) {
+        TOLUA_REPACK_LOG(ctx, consumer_pc,
+                         "adjacent chain retry via producer blocker call at pc=%u reg=%u",
+                         (unsigned int)producer_slice_interference_pc,
+                         (unsigned int)producer_slice_interference_reg);
+        status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                   producer_slice_interference_pc, interfering,
+                                                   consumer_pc, framesize_io, targets, map, ctx,
+                                                   &inner_changed);
+        if (status != TOLUA_BCCONV_OK || inner_changed) {
+          *changed = inner_changed;
+          free(consumer_queue_state);
+          free(consumer_queue_pc);
+          free(consumer_rewrite);
+          free(consumer_state_mask);
+          free(producer_selected);
+          free(consumer_selected);
+          return status;
+        }
+      }
+    }
+
     TOLUA_REPACK_LOG(ctx, consumer_pc, "adjacent chain slice reject");
   }
 
@@ -2707,6 +2774,15 @@ static int tolua_try_repack_call_result_copy(uint8_t *buf, size_t bc_pos, uint32
     return TOLUA_BCCONV_OK;
   }
   if (producer_pc + 1 >= numbc) return TOLUA_BCCONV_OK;
+  {
+    BCIns next = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(producer_pc + 1) * 4, be);
+    if (bc_op(next) == BC_MOV &&
+        bc_b(next) == 0 &&
+        bc_c(next) == old_base &&
+        bc_a(next) != old_base) {
+      return TOLUA_BCCONV_OK;
+    }
+  }
   if (targets[producer_pc + 1]) return TOLUA_BCCONV_OK;
 
   nargs = (BCReg)(bc_c(producer) - 1);
@@ -3168,6 +3244,16 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   if (op == BC_CALL && bc_b(call) == 2 && pc + 1 < numbc) {
     BCIns consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc + 1) * 4, be);
     BCOp consumer_op = bc_op(consumer);
+
+    if (consumer_op == BC_CAT &&
+        bc_b(consumer) <= bc_c(consumer) &&
+        bc_c(consumer) == old_base) {
+      status = tolua_try_repack_call_result_copy(buf, bc_pos, numbc, be,
+                                                 pc, call, pc + 1,
+                                                 framesize_io, targets, map, ctx,
+                                                 changed);
+      if (status != TOLUA_BCCONV_OK || *changed) return status;
+    }
 
     if (consumer_op == BC_CALL &&
         bc_b(consumer) != 0 &&

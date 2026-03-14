@@ -476,7 +476,7 @@ static int tolua_schedule_insert_copies(const tolua_bcdebug_ctx *ctx, uint32_t p
 #define TOLUA_REPACK_LOG(ctx, pc, fmt, ...) \
   fprintf(stderr, "[repack] proto=%u pc=%u " fmt "\n", \
           (unsigned int)((ctx) != NULL ? (ctx)->proto_index : 0u), \
-          (unsigned int)(pc), __VA_ARGS__)
+          (unsigned int)(pc), ##__VA_ARGS__)
 #else
 #define TOLUA_REPACK_LOG(ctx, pc, fmt, ...) ((void)0)
 #endif
@@ -776,6 +776,7 @@ static int tolua_ins_reads_reg(BCOp op, BCIns ins, BCReg reg)
     case BC_JITERL:
       return tolua_reg_in_closed_range(reg, a, (BCReg)(a + 3));
     case BC_VARG:
+    case BC_ISNEXT:
     case BC_JMP:
     case BC_UCLO:
       return 0;
@@ -817,6 +818,7 @@ static int tolua_ins_writes_reg(BCOp op, BCIns ins, BCReg reg)
     case BC_FORL:
     case BC_IFORL:
     case BC_JFORL:
+    case BC_ISNEXT:
     case BC_ITERL:
     case BC_IITERL:
     case BC_JITERL:
@@ -1478,6 +1480,1453 @@ static int tolua_select_repack_slice(const uint8_t *buf, size_t bc_pos, uint32_t
 
   *out_min_window = min_window;
   return 1;
+}
+
+static int tolua_retry_repack_slice_with_readonly_interference(const uint8_t *buf, size_t bc_pos,
+                                                               uint32_t numbc, int be, uint32_t pc,
+                                                               BCReg old_first, BCReg old_last,
+                                                               const uint8_t *targets,
+                                                               uint8_t *selected, int *out_min_window,
+                                                               uint32_t *out_interference_pc,
+                                                               BCOp *out_interference_op,
+                                                               BCReg *out_interference_reg);
+static int tolua_reg_live_after_pc(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                   uint32_t start_pc, BCReg reg);
+static int tolua_collect_proto_holes(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                     int remap_v1, int target_fr2, tolua_bcshift_map *map,
+                                     const tolua_bcdebug_ctx *ctx);
+static BCOp tolua_remap_bc_op(BCOp op, int remap_v1);
+static int tolua_collapse_multires_producer(uint8_t *buf, size_t bc_pos, uint32_t pc,
+                                            int be, const tolua_bcdebug_ctx *ctx);
+static int tolua_prepare_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                        int remap_v1, int target_fr2,
+                                        const tolua_bcdebug_ctx *ctx);
+static int tolua_try_repack_adjacent_cat_call_chain(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                    uint32_t producer_pc, BCIns producer,
+                                                    uint32_t consumer_pc, BCIns consumer,
+                                                    uint8_t *framesize_io, const uint8_t *targets,
+                                                    const tolua_bcshift_map *map,
+                                                    const tolua_bcdebug_ctx *ctx, int *changed);
+static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                uint32_t producer_pc, BCIns producer,
+                                                uint32_t consumer_pc, BCIns consumer,
+                                                uint8_t *framesize_io, const uint8_t *targets,
+                                                const tolua_bcshift_map *map,
+                                                const tolua_bcdebug_ctx *ctx, int *changed);
+static int tolua_try_repack_first_arg_call_chain(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                 uint32_t producer_pc, BCIns producer,
+                                                 uint32_t consumer_pc, BCIns consumer,
+                                                 uint8_t *framesize_io, const uint8_t *targets,
+                                                 const tolua_bcshift_map *map,
+                                                 const tolua_bcdebug_ctx *ctx, int *changed);
+static int tolua_try_fix_cat_call_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                uint32_t pc, uint8_t *framesize_io,
+                                                const uint8_t *targets,
+                                                const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_try_fix_cat_arg_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                         uint32_t pc, uint8_t *framesize_io,
+                                         const uint8_t *targets,
+                                         const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                               uint32_t pc, BCReg new_first, BCReg new_last,
+                                               uint8_t *framesize_io, const uint8_t *targets,
+                                               const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_try_select_simple_local_defs(const uint8_t *buf, size_t bc_pos, int be,
+                                              uint32_t pc, BCReg old_first, BCReg old_last,
+                                              uint8_t *selected, int *out_min_window);
+static int tolua_try_fix_call_method_basecopy_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                             uint32_t pc, uint8_t *framesize_io,
+                                                             const uint8_t *targets,
+                                                             const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_try_fix_call_selfdef_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                     uint32_t pc, uint8_t *framesize_io,
+                                                     const uint8_t *targets,
+                                                     const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_try_fix_tail_call_arg_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                      uint32_t pc, uint8_t *framesize_io,
+                                                      const uint8_t *targets,
+                                                      const tolua_bcdebug_ctx *ctx, int *handled);
+
+static int tolua_window_has_nonselected_touch(const uint8_t *buf, size_t bc_pos, int be,
+                                              int first_pc, uint32_t stop_pc,
+                                              const uint8_t *selected,
+                                              BCReg first, BCReg last,
+                                              uint32_t *out_pc, BCOp *out_op, BCReg *out_reg)
+{
+  int scan = 0;
+
+  if (out_pc) *out_pc = UINT32_MAX;
+  if (out_op) *out_op = BC__MAX;
+  if (out_reg) *out_reg = 0;
+
+  for (scan = first_pc; scan < (int)stop_pc; scan++) {
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+    BCReg reg = 0;
+
+    if (selected[scan]) continue;
+    ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    op = bc_op(ins);
+    for (reg = first; reg <= last; reg++) {
+      if (!tolua_ins_reads_reg(op, ins, reg) && !tolua_ins_writes_reg(op, ins, reg)) continue;
+      if (out_pc) *out_pc = (uint32_t)scan;
+      if (out_op) *out_op = op;
+      if (out_reg) *out_reg = reg;
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                 uint32_t pc, BCReg old_first, BCReg old_last,
+                                                 uint8_t *framesize_io, const uint8_t *targets,
+                                                 const tolua_bcdebug_ctx *ctx)
+{
+  BCReg new_first = 0;
+  BCReg new_last = 0;
+  uint8_t *selected = NULL;
+  int min_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int status = TOLUA_BCCONV_OK;
+  int scan = 0;
+
+  if (old_first > old_last) return TOLUA_BCCONV_OK;
+  if (old_first == old_last && pc > 0) {
+    BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    if (bc_op(prev) == BC_CALL && bc_b(prev) == 2 && bc_a(prev) == (BCReg)(old_first + 1)) {
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (old_last >= BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 argument range [%u,%u] exceeds register limit",
+                                   (unsigned int)old_first, (unsigned int)old_last);
+  }
+
+  new_first = (BCReg)(old_first + 1);
+  new_last = (BCReg)(old_last + 1);
+  if (new_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 argument shift [%u,%u] -> [%u,%u] exceeds register limit",
+                                   (unsigned int)old_first, (unsigned int)old_last,
+                                   (unsigned int)new_first, (unsigned int)new_last);
+  }
+
+  selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!selected) {
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 slice buffer");
+  }
+
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_first, old_last,
+                                 targets, selected, &min_window,
+                                 &interference_pc, &interference_op, &interference_reg) &&
+      !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc,
+                                                           old_first, old_last, targets,
+                                                           selected, &min_window,
+                                                           &interference_pc, &interference_op,
+                                                           &interference_reg)) {
+    int handled = 0;
+
+    memset(selected, 0, (size_t)numbc);
+    if (tolua_try_select_simple_local_defs(buf, bc_pos, be, pc, old_first, old_last,
+                                           selected, &min_window)) {
+      interference_pc = UINT32_MAX;
+      interference_op = BC__MAX;
+      interference_reg = 0;
+    } else {
+      free(selected);
+      status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                   framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) return status;
+      if (handled) return TOLUA_BCCONV_OK;
+      status = tolua_try_fix_call_selfdef_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                        framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) return status;
+      if (handled) return TOLUA_BCCONV_OK;
+      status = tolua_try_fix_call_method_basecopy_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                                framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) return status;
+      if (handled) return TOLUA_BCCONV_OK;
+      status = tolua_try_fix_tail_call_arg_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                         framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) return status;
+      if (handled) return TOLUA_BCCONV_OK;
+      return tolua_failbytecodeproto(ctx, pc,
+                                     (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                     bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                     TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                     "failed to select FR2 argument slice [%u,%u] (blocker pc=%u op=%s reg=%u)",
+                                     (unsigned int)old_first, (unsigned int)old_last,
+                                     (unsigned int)interference_pc,
+                                     tolua_bc_opname(interference_op),
+                                     (unsigned int)interference_reg);
+    }
+  }
+
+  if (tolua_window_has_nonselected_touch(buf, bc_pos, be, min_window, pc, selected,
+                                         new_last, new_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    int handled = 0;
+
+    status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                 framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    status = tolua_try_fix_call_selfdef_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                      framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    status = tolua_try_fix_call_method_basecopy_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                              framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    status = tolua_try_fix_tail_call_arg_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                       framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    status = tolua_try_fix_cat_call_chain_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                  framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    status = tolua_try_fix_cat_arg_for_fr2(buf, bc_pos, numbc, be, pc,
+                                           framesize_io, targets, ctx, &handled);
+    free(selected);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) return TOLUA_BCCONV_OK;
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                   "FR2 argument target register %u is touched by pc=%u op=%s before call",
+                                   (unsigned int)new_last, (unsigned int)interference_pc,
+                                   tolua_bc_opname(interference_op));
+  }
+
+  if (tolua_reg_live_after_pc(buf, bc_pos, numbc, be, pc + 1, new_last)) {
+    int handled = 0;
+
+    status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                 framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) {
+      free(selected);
+      return status;
+    }
+    if (handled) {
+      free(selected);
+      return TOLUA_BCCONV_OK;
+    }
+    free(selected);
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                   "FR2 argument target register %u stays live after pc=%u",
+                                   (unsigned int)new_last, (unsigned int)pc);
+  }
+
+  for (scan = min_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+    tolua_repack_remap_reg_range(&ins, op, old_first, old_last, new_first);
+    tolua_write_ins(slot, (uint32_t)ins, be);
+    tolua_sync_open_tsetm_after_repack(buf, bc_pos, numbc, be, (uint32_t)scan, ins,
+                                       old_first, old_last, new_first);
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx, pc,
+                                          (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                          bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)));
+  free(selected);
+  return status;
+}
+
+static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                               uint32_t pc, BCReg new_first, BCReg new_last,
+                                               uint8_t *framesize_io, const uint8_t *targets,
+                                               const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  uint8_t *selected = NULL;
+  int min_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (new_first > new_last || new_last > BCMAX_A) return TOLUA_BCCONV_OK;
+
+  selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!selected) {
+    return tolua_failbytecodeproto(ctx, pc,
+                                   (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                   bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)),
+                                   TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate existing-FR2 slice buffer");
+  }
+
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                 targets, selected, &min_window,
+                                 &interference_pc, &interference_op, &interference_reg) &&
+      !tolua_try_select_simple_local_defs(buf, bc_pos, be, pc, new_first, new_last,
+                                          selected, &min_window)) {
+    free(selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx, pc,
+                                          (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                          bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)));
+  free(selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  TOLUA_REPACK_LOG(ctx, pc, "accept existing FR2 slice [%u,%u]",
+                   (unsigned int)new_first, (unsigned int)new_last);
+  *handled = 1;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_try_fix_cat_call_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                uint32_t pc, uint8_t *framesize_io,
+                                                const uint8_t *targets,
+                                                const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  BCIns call = 0;
+  BCIns consumer = 0;
+  BCIns cat = 0;
+  BCReg old_base = 0;
+  BCReg old_arg_first = 0;
+  BCReg old_cat_last = 0;
+  BCReg new_base = 0;
+  BCReg new_cat_first = 0;
+  BCReg new_cat_last = 0;
+  uint8_t *func_selected = NULL;
+  uint8_t *cat_selected = NULL;
+  uint8_t *combined_selected = NULL;
+  int func_min_window = (int)pc;
+  int cat_min_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int scan = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (pc == 0 || pc + 1 >= numbc) return TOLUA_BCCONV_OK;
+
+  call = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc + 1) * 4, be);
+  cat = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+  if (bc_op(call) != BC_CALL || bc_op(consumer) != BC_CALL || bc_op(cat) != BC_CAT) {
+    return TOLUA_BCCONV_OK;
+  }
+  if (bc_b(call) != 2 || bc_c(call) != 2 || bc_c(consumer) != 2) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  old_base = bc_a(call);
+  old_arg_first = (BCReg)(old_base + 1);
+  old_cat_last = bc_c(cat);
+  if (bc_a(consumer) + bc_c(consumer) - 1 != old_base) return TOLUA_BCCONV_OK;
+  if (bc_a(cat) != old_arg_first || bc_b(cat) != old_arg_first || old_cat_last < old_arg_first) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "cat-call match producer_base=%u arg=[%u,%u] consumer_base=%u",
+                   (unsigned int)old_base, (unsigned int)old_arg_first,
+                   (unsigned int)old_cat_last, (unsigned int)bc_a(consumer));
+
+  new_base = (BCReg)(old_base + 1);
+  new_cat_first = (BCReg)(old_arg_first + 2);
+  new_cat_last = (BCReg)(old_cat_last + 2);
+  if (new_cat_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, call, BC_CALL, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 CAT-call chain exceeds register limit");
+  }
+
+  func_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  cat_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  combined_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!func_selected || !cat_selected || !combined_selected) {
+    free(combined_selected);
+    free(cat_selected);
+    free(func_selected);
+    return tolua_failbytecodeproto(ctx, pc, call, BC_CALL, TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 CAT-call chain slices");
+  }
+
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, old_base, old_base,
+                                 targets, func_selected, &func_min_window,
+                                 &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc, "cat-call func-slice reject");
+    free(combined_selected);
+    free(cat_selected);
+    free(func_selected);
+    return TOLUA_BCCONV_OK;
+  }
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc - 1, old_arg_first, old_cat_last,
+                                 targets, cat_selected, &cat_min_window,
+                                 &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc, "cat-call arg-slice reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(cat_selected);
+    free(func_selected);
+    return TOLUA_BCCONV_OK;
+  }
+  cat_selected[pc - 1] = 1;
+
+  for (scan = 0; scan < (int)numbc; scan++) {
+    combined_selected[scan] = (uint8_t)(func_selected[scan] || cat_selected[scan]);
+  }
+
+  if (tolua_window_has_nonselected_touch(buf, bc_pos, be, func_min_window, pc,
+                                         combined_selected, new_base, new_base,
+                                         &interference_pc, &interference_op, &interference_reg) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, cat_min_window, pc,
+                                         combined_selected, new_cat_first, new_cat_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc, "cat-call target-touch reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(cat_selected);
+    free(func_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  if (tolua_reg_live_after_pc(buf, bc_pos, numbc, be, pc + 1, new_cat_last)) {
+    TOLUA_REPACK_LOG(ctx, pc, "cat-call live-after reject reg=%u", (unsigned int)new_cat_last);
+    free(combined_selected);
+    free(cat_selected);
+    free(func_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = func_min_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!func_selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+    tolua_repack_remap_reg_range(&ins, op, old_base, old_base, new_base);
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  for (scan = cat_min_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!cat_selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+    tolua_repack_remap_reg_range(&ins, op, old_arg_first, old_cat_last, new_cat_first);
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  setbc_a(&call, new_base);
+  tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)call, be);
+
+  status = tolua_update_framesize_checked(framesize_io, new_cat_last, ctx, pc, call, BC_CALL);
+  free(combined_selected);
+  free(cat_selected);
+  free(func_selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  TOLUA_REPACK_LOG(ctx, pc, "cat-call success new_base=%u new_arg=[%u,%u]",
+                   (unsigned int)new_base, (unsigned int)new_cat_first,
+                   (unsigned int)new_cat_last);
+  *handled = 1;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_try_fix_tail_call_arg_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                      uint32_t pc, uint8_t *framesize_io,
+                                                      const uint8_t *targets,
+                                                      const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  BCIns consumer = 0;
+  BCIns producer = 0;
+  BCOp consumer_op = BC__MAX;
+  BCReg consumer_base = 0;
+  BCReg consumer_old_first = 0;
+  BCReg consumer_old_last = 0;
+  BCReg prefix_old_last = 0;
+  int have_prefix = 0;
+  BCReg producer_base = 0;
+  BCReg producer_cur_arg_first = 0;
+  BCReg producer_cur_arg_last = 0;
+  BCReg prefix_new_first = 0;
+  BCReg prefix_new_last = 0;
+  BCReg producer_new_base = 0;
+  BCReg producer_new_arg_first = 0;
+  BCReg producer_new_arg_last = 0;
+  uint8_t *prefix_selected = NULL;
+  uint8_t *producer_base_selected = NULL;
+  uint8_t *producer_arg_selected = NULL;
+  uint8_t *combined_selected = NULL;
+  int prefix_min_window = (int)pc;
+  int producer_base_min_window = (int)pc;
+  int producer_arg_min_window = (int)pc;
+  int start_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int scan = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (pc == 0) return TOLUA_BCCONV_OK;
+
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  producer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+  consumer_op = bc_op(consumer);
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-chain helper enter consumer=%s producer=%s producer_b=%u consumer_span=%u producer_c=%u",
+                   tolua_bc_opname(consumer_op), tolua_bc_opname(bc_op(producer)),
+                   (unsigned int)bc_b(producer),
+                   (unsigned int)(consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)),
+                   (unsigned int)bc_c(producer));
+  if ((consumer_op != BC_CALL && consumer_op != BC_CALLT) ||
+      bc_op(producer) != BC_CALL || bc_b(producer) != 2) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  consumer_base = bc_a(consumer);
+  if ((consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) <= 1) return TOLUA_BCCONV_OK;
+  consumer_old_first = (BCReg)(consumer_base + 1);
+  consumer_old_last = (BCReg)(consumer_base +
+                              (consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) - 1);
+  producer_base = bc_a(producer);
+  if (producer_base != consumer_old_last || bc_c(producer) <= 1) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  prefix_old_last = (BCReg)(producer_base - 1);
+  have_prefix = consumer_old_first <= prefix_old_last;
+
+  producer_cur_arg_first = (BCReg)(producer_base + 2);
+  producer_cur_arg_last = (BCReg)(producer_base + bc_c(producer));
+  prefix_new_first = (BCReg)(consumer_old_first + 1);
+  prefix_new_last = (BCReg)(prefix_old_last + 1);
+  producer_new_base = (BCReg)(producer_base + 1);
+  producer_new_arg_first = (BCReg)(producer_cur_arg_first + 1);
+  producer_new_arg_last = (BCReg)(producer_cur_arg_last + 1);
+
+  if (producer_new_arg_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 call-chain exceeds register limit");
+  }
+
+  prefix_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_base_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_arg_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  combined_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!prefix_selected || !producer_base_selected || !producer_arg_selected || !combined_selected) {
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 call-chain slices");
+  }
+
+  if (((have_prefix &&
+        !tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, consumer_old_first, prefix_old_last,
+                                   targets, prefix_selected, &prefix_min_window,
+                                   &interference_pc, &interference_op, &interference_reg) &&
+        !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc,
+                                                             consumer_old_first, prefix_old_last,
+                                                             targets, prefix_selected, &prefix_min_window,
+                                                             &interference_pc, &interference_op,
+                                                             &interference_reg))) ||
+      (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc - 1, producer_base, producer_base,
+                                  targets, producer_base_selected, &producer_base_min_window,
+                                  &interference_pc, &interference_op, &interference_reg) &&
+       !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc - 1,
+                                                            producer_base, producer_base,
+                                                            targets, producer_base_selected,
+                                                            &producer_base_min_window,
+                                                            &interference_pc, &interference_op,
+                                                            &interference_reg)) ||
+      ((!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc - 1,
+                                   producer_cur_arg_first, producer_cur_arg_last,
+                                   targets, producer_arg_selected, &producer_arg_min_window,
+                                   &interference_pc, &interference_op, &interference_reg) &&
+        !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc - 1,
+                                                             producer_cur_arg_first, producer_cur_arg_last,
+                                                             targets, producer_arg_selected,
+                                                             &producer_arg_min_window,
+                                                             &interference_pc, &interference_op,
+                                                             &interference_reg)) &&
+       !tolua_try_select_simple_local_defs(buf, bc_pos, be, pc - 1,
+                                           producer_cur_arg_first, producer_cur_arg_last,
+                                           producer_arg_selected, &producer_arg_min_window))) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "tail-call chain slice reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return TOLUA_BCCONV_OK;
+  }
+  producer_base_selected[pc - 1] = 1;
+  producer_arg_selected[pc - 1] = 1;
+
+  for (scan = 0; scan < (int)numbc; scan++) {
+    combined_selected[scan] = (uint8_t)(prefix_selected[scan] ||
+                                        producer_base_selected[scan] ||
+                                        producer_arg_selected[scan]);
+  }
+
+  start_window = have_prefix ? prefix_min_window : producer_base_min_window;
+  if (producer_base_min_window < start_window) start_window = producer_base_min_window;
+  if (producer_arg_min_window < start_window) start_window = producer_arg_min_window;
+  if (((have_prefix &&
+        tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                           prefix_new_first, prefix_new_last,
+                                           &interference_pc, &interference_op, &interference_reg))) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_base, producer_new_base,
+                                         &interference_pc, &interference_op, &interference_reg) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_arg_first, producer_new_arg_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "tail-call chain target-touch reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = start_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+
+    if (have_prefix && prefix_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, consumer_old_first, prefix_old_last, prefix_new_first);
+    }
+    if (producer_base_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_base, producer_base, producer_new_base);
+    }
+    if (producer_arg_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_cur_arg_first, producer_cur_arg_last,
+                                   producer_new_arg_first);
+    }
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, producer_new_arg_last, ctx, pc,
+                                          consumer, consumer_op);
+  free(combined_selected);
+  free(producer_arg_selected);
+  free(producer_base_selected);
+  free(prefix_selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-chain success prefix=[%u,%u]->[%u,%u] producer=%u args=[%u,%u]->base=%u args=[%u,%u]",
+                   (unsigned int)consumer_old_first, (unsigned int)prefix_old_last,
+                   (unsigned int)prefix_new_first, (unsigned int)prefix_new_last,
+                   (unsigned int)producer_base, (unsigned int)producer_cur_arg_first,
+                   (unsigned int)producer_cur_arg_last, (unsigned int)producer_new_base,
+                   (unsigned int)producer_new_arg_first, (unsigned int)producer_new_arg_last);
+  *handled = 1;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_try_fix_call_method_basecopy_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                             uint32_t pc, uint8_t *framesize_io,
+                                                             const uint8_t *targets,
+                                                             const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  uint32_t producer_pc = 0;
+  uint32_t root_pc = UINT32_MAX;
+  uint32_t method_pc = UINT32_MAX;
+  uint32_t selfcopy_pc = UINT32_MAX;
+  BCIns consumer = 0;
+  BCIns producer = 0;
+  BCOp consumer_op = BC__MAX;
+  BCReg consumer_base = 0;
+  BCReg consumer_old_first = 0;
+  BCReg consumer_old_last = 0;
+  BCReg producer_base = 0;
+  BCReg producer_cur_arg_first = 0;
+  BCReg producer_cur_arg_last = 0;
+  BCReg producer_new_base = 0;
+  BCReg producer_new_arg_first = 0;
+  BCReg producer_new_arg_last = 0;
+  uint8_t *producer_base_selected = NULL;
+  uint8_t *producer_arg_selected = NULL;
+  uint8_t *combined_selected = NULL;
+  int producer_arg_min_window = (int)pc;
+  int start_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  BCReg copy_dst[1];
+  BCReg copy_src[1];
+  int scan = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
+  if (pc == 0) return TOLUA_BCCONV_OK;
+
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  producer_pc = pc - 1;
+  producer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)producer_pc * 4, be);
+  consumer_op = bc_op(consumer);
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-method-basecopy helper enter consumer=%s producer=%s producer_b=%u consumer_span=%u producer_c=%u",
+                   tolua_bc_opname(consumer_op), tolua_bc_opname(bc_op(producer)),
+                   (unsigned int)bc_b(producer),
+                   (unsigned int)(consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)),
+                   (unsigned int)bc_c(producer));
+
+  if ((consumer_op != BC_CALL && consumer_op != BC_CALLT) ||
+      bc_op(producer) != BC_CALL || bc_b(producer) != 2 || bc_c(producer) <= 2) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  consumer_base = bc_a(consumer);
+  if ((consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) != 2) {
+    return TOLUA_BCCONV_OK;
+  }
+  consumer_old_first = (BCReg)(consumer_base + 1);
+  consumer_old_last = (BCReg)(consumer_base +
+                              (consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) - 1);
+  producer_base = bc_a(producer);
+  if (producer_base != consumer_old_last) return TOLUA_BCCONV_OK;
+
+  producer_cur_arg_first = (BCReg)(producer_base + 2);
+  producer_cur_arg_last = (BCReg)(producer_base + bc_c(producer));
+  producer_new_base = (BCReg)(producer_base + 1);
+  producer_new_arg_first = (BCReg)(producer_cur_arg_first + 1);
+  producer_new_arg_last = (BCReg)(producer_cur_arg_last + 1);
+
+  if (producer_new_arg_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 call-method-basecopy chain exceeds register limit");
+  }
+
+  for (scan = (int)producer_pc - 1; scan >= 0; scan--) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    BCOp op = bc_op(ins);
+
+    if (method_pc == UINT32_MAX &&
+        op == BC_TGETS &&
+        bc_a(ins) == producer_base &&
+        bc_b(ins) == producer_base) {
+      method_pc = (uint32_t)scan;
+      continue;
+    }
+    if (method_pc != UINT32_MAX &&
+        selfcopy_pc == UINT32_MAX &&
+        op == BC_MOV &&
+        bc_a(ins) == producer_cur_arg_first &&
+        bc_c(ins) == producer_base) {
+      selfcopy_pc = (uint32_t)scan;
+      continue;
+    }
+    if (method_pc != UINT32_MAX &&
+        op == BC_CALL &&
+        bc_b(ins) == 2 &&
+        bc_a(ins) == producer_base) {
+      root_pc = (uint32_t)scan;
+      break;
+    }
+    if (method_pc != UINT32_MAX && tolua_ins_writes_reg(op, ins, producer_base)) {
+      return TOLUA_BCCONV_OK;
+    }
+  }
+
+  if (method_pc == UINT32_MAX || selfcopy_pc == UINT32_MAX || root_pc == UINT32_MAX) {
+    return TOLUA_BCCONV_OK;
+  }
+  if (root_pc + 1 >= numbc || targets[root_pc + 1]) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  producer_base_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_arg_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  combined_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!producer_base_selected || !producer_arg_selected || !combined_selected) {
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 call-method-basecopy slices");
+  }
+
+  if ((!tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc,
+                                  producer_cur_arg_first, producer_cur_arg_last,
+                                  targets, producer_arg_selected, &producer_arg_min_window,
+                                  &interference_pc, &interference_op, &interference_reg) &&
+       !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, producer_pc,
+                                                            producer_cur_arg_first, producer_cur_arg_last,
+                                                            targets, producer_arg_selected,
+                                                            &producer_arg_min_window,
+                                                            &interference_pc, &interference_op,
+                                                            &interference_reg) &&
+       !tolua_try_select_simple_local_defs(buf, bc_pos, be, producer_pc,
+                                           producer_cur_arg_first, producer_cur_arg_last,
+                                           producer_arg_selected, &producer_arg_min_window))) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "call-method-basecopy arg-slice reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = (int)root_pc + 1; scan < (int)producer_pc; scan++) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    BCOp op = bc_op(ins);
+
+    if ((uint32_t)scan == selfcopy_pc ||
+        (uint32_t)scan == method_pc ||
+        tolua_ins_reads_reg(op, ins, producer_base) ||
+        tolua_ins_writes_reg(op, ins, producer_base)) {
+      producer_base_selected[scan] = 1;
+    }
+  }
+  producer_base_selected[producer_pc] = 1;
+  producer_arg_selected[producer_pc] = 1;
+
+  for (scan = 0; scan < (int)numbc; scan++) {
+    combined_selected[scan] = (uint8_t)(producer_base_selected[scan] ||
+                                        producer_arg_selected[scan]);
+  }
+
+  start_window = (int)root_pc + 1;
+  if (producer_arg_min_window < start_window) start_window = producer_arg_min_window;
+
+  if (tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_base, producer_new_base,
+                                         &interference_pc, &interference_op, &interference_reg) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_arg_first, producer_new_arg_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "call-method-basecopy target-touch reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  copy_dst[0] = producer_new_base;
+  copy_src[0] = producer_base;
+  if (!tolua_schedule_insert_copies(ctx, pc, root_pc + 1, copy_dst, copy_src, 1)) {
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = start_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!combined_selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+
+    if (producer_base_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_base, producer_base, producer_new_base);
+    }
+    if (producer_arg_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_cur_arg_first, producer_cur_arg_last,
+                                   producer_new_arg_first);
+    }
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, producer_new_arg_last, ctx, pc,
+                                          consumer, consumer_op);
+  free(combined_selected);
+  free(producer_arg_selected);
+  free(producer_base_selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-method-basecopy success root_pc=%u producer=%u new_base=%u args=[%u,%u]",
+                   (unsigned int)root_pc, (unsigned int)producer_pc,
+                   (unsigned int)producer_new_base,
+                   (unsigned int)producer_new_arg_first,
+                   (unsigned int)producer_new_arg_last);
+  *handled = 1;
+  return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
+}
+
+static int tolua_try_fix_call_selfdef_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                                     uint32_t pc, uint8_t *framesize_io,
+                                                     const uint8_t *targets,
+                                                     const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  uint32_t producer_pc = 0;
+  uint32_t self_pc = 0;
+  BCIns consumer = 0;
+  BCIns producer = 0;
+  BCIns self_ins = 0;
+  BCOp consumer_op = BC__MAX;
+  BCOp self_op = BC__MAX;
+  BCReg consumer_base = 0;
+  BCReg consumer_old_first = 0;
+  BCReg consumer_old_last = 0;
+  BCReg prefix_old_last = 0;
+  int have_prefix = 0;
+  BCReg producer_base = 0;
+  BCReg producer_cur_arg_first = 0;
+  BCReg producer_cur_arg_last = 0;
+  BCReg prefix_new_first = 0;
+  BCReg prefix_new_last = 0;
+  BCReg producer_new_base = 0;
+  BCReg producer_new_arg_first = 0;
+  BCReg producer_new_arg_last = 0;
+  BCReg self_def = 0;
+  uint8_t *prefix_selected = NULL;
+  uint8_t *producer_base_selected = NULL;
+  uint8_t *producer_arg_selected = NULL;
+  uint8_t *combined_selected = NULL;
+  int prefix_min_window = (int)pc;
+  int producer_base_min_window = (int)pc;
+  int producer_arg_min_window = (int)pc;
+  int start_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int scan = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (pc < 2) return TOLUA_BCCONV_OK;
+
+  producer_pc = pc - 2;
+  self_pc = pc - 1;
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  producer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)producer_pc * 4, be);
+  self_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)self_pc * 4, be);
+  consumer_op = bc_op(consumer);
+  self_op = bc_op(self_ins);
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-selfdef helper enter consumer=%s producer=%s self=%s producer_b=%u consumer_span=%u producer_c=%u",
+                   tolua_bc_opname(consumer_op), tolua_bc_opname(bc_op(producer)),
+                   tolua_bc_opname(self_op), (unsigned int)bc_b(producer),
+                   (unsigned int)(consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)),
+                   (unsigned int)bc_c(producer));
+
+  if ((consumer_op != BC_CALL && consumer_op != BC_CALLT) ||
+      bc_op(producer) != BC_CALL || bc_b(producer) != 2) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  consumer_base = bc_a(consumer);
+  if ((consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) <= 1) return TOLUA_BCCONV_OK;
+  consumer_old_first = (BCReg)(consumer_base + 1);
+  consumer_old_last = (BCReg)(consumer_base +
+                              (consumer_op == BC_CALL ? bc_c(consumer) : bc_d(consumer)) - 1);
+  producer_base = bc_a(producer);
+  if (producer_base != consumer_old_last || bc_c(producer) <= 1) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  if (!tolua_get_slice_def_reg(self_op, self_ins, producer_base, producer_base, &self_def) ||
+      self_def != producer_base ||
+      !tolua_ins_reads_reg(self_op, self_ins, producer_base)) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  prefix_old_last = (BCReg)(producer_base - 1);
+  have_prefix = consumer_old_first <= prefix_old_last;
+
+  producer_cur_arg_first = (BCReg)(producer_base + 2);
+  producer_cur_arg_last = (BCReg)(producer_base + bc_c(producer));
+  prefix_new_first = (BCReg)(consumer_old_first + 1);
+  prefix_new_last = (BCReg)(prefix_old_last + 1);
+  producer_new_base = (BCReg)(producer_base + 1);
+  producer_new_arg_first = (BCReg)(producer_cur_arg_first + 1);
+  producer_new_arg_last = (BCReg)(producer_cur_arg_last + 1);
+
+  if (producer_new_arg_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 call-selfdef chain exceeds register limit");
+  }
+
+  prefix_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_base_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  producer_arg_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  combined_selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!prefix_selected || !producer_base_selected || !producer_arg_selected || !combined_selected) {
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return tolua_failbytecodeproto(ctx, pc, consumer, consumer_op,
+                                   TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 call-selfdef chain slices");
+  }
+
+  if (((have_prefix &&
+        !tolua_select_repack_slice(buf, bc_pos, numbc, be, pc, consumer_old_first, prefix_old_last,
+                                   targets, prefix_selected, &prefix_min_window,
+                                   &interference_pc, &interference_op, &interference_reg) &&
+        !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, pc,
+                                                             consumer_old_first, prefix_old_last,
+                                                             targets, prefix_selected, &prefix_min_window,
+                                                             &interference_pc, &interference_op,
+                                                             &interference_reg))) ||
+      (!tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc, producer_base, producer_base,
+                                  targets, producer_base_selected, &producer_base_min_window,
+                                  &interference_pc, &interference_op, &interference_reg) &&
+       !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, producer_pc,
+                                                            producer_base, producer_base,
+                                                            targets, producer_base_selected,
+                                                            &producer_base_min_window,
+                                                            &interference_pc, &interference_op,
+                                                            &interference_reg)) ||
+      ((!tolua_select_repack_slice(buf, bc_pos, numbc, be, producer_pc,
+                                   producer_cur_arg_first, producer_cur_arg_last,
+                                   targets, producer_arg_selected, &producer_arg_min_window,
+                                   &interference_pc, &interference_op, &interference_reg) &&
+        !tolua_retry_repack_slice_with_readonly_interference(buf, bc_pos, numbc, be, producer_pc,
+                                                             producer_cur_arg_first, producer_cur_arg_last,
+                                                             targets, producer_arg_selected,
+                                                             &producer_arg_min_window,
+                                                             &interference_pc, &interference_op,
+                                                             &interference_reg)) &&
+       !tolua_try_select_simple_local_defs(buf, bc_pos, be, producer_pc,
+                                           producer_cur_arg_first, producer_cur_arg_last,
+                                           producer_arg_selected, &producer_arg_min_window))) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "call-selfdef chain slice reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  producer_base_selected[self_pc] = 1;
+  producer_base_selected[producer_pc] = 1;
+  producer_arg_selected[producer_pc] = 1;
+
+  for (scan = 0; scan < (int)numbc; scan++) {
+    combined_selected[scan] = (uint8_t)(prefix_selected[scan] ||
+                                        producer_base_selected[scan] ||
+                                        producer_arg_selected[scan]);
+  }
+
+  start_window = have_prefix ? prefix_min_window : producer_base_min_window;
+  if (producer_base_min_window < start_window) start_window = producer_base_min_window;
+  if (producer_arg_min_window < start_window) start_window = producer_arg_min_window;
+
+  if (((have_prefix &&
+        tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                           prefix_new_first, prefix_new_last,
+                                           &interference_pc, &interference_op, &interference_reg))) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_base, producer_new_base,
+                                         &interference_pc, &interference_op, &interference_reg) ||
+      tolua_window_has_nonselected_touch(buf, bc_pos, be, start_window, pc, combined_selected,
+                                         producer_new_arg_first, producer_new_arg_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "call-selfdef chain target-touch reject blocker_pc=%u op=%s reg=%u",
+                     (unsigned int)interference_pc, tolua_bc_opname(interference_op),
+                     (unsigned int)interference_reg);
+    free(combined_selected);
+    free(producer_arg_selected);
+    free(producer_base_selected);
+    free(prefix_selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = start_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!combined_selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+
+    if (have_prefix && prefix_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, consumer_old_first, prefix_old_last, prefix_new_first);
+    }
+    if (producer_base_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_base, producer_base, producer_new_base);
+    }
+    if (producer_arg_selected[scan]) {
+      tolua_repack_remap_reg_range(&ins, op, producer_cur_arg_first, producer_cur_arg_last,
+                                   producer_new_arg_first);
+    }
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, producer_new_arg_last, ctx, pc,
+                                          consumer, consumer_op);
+  free(combined_selected);
+  free(producer_arg_selected);
+  free(producer_base_selected);
+  free(prefix_selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "call-selfdef chain success prefix=[%u,%u]->[%u,%u] producer=%u args=[%u,%u]->base=%u args=[%u,%u]",
+                   (unsigned int)consumer_old_first, (unsigned int)prefix_old_last,
+                   (unsigned int)prefix_new_first, (unsigned int)prefix_new_last,
+                   (unsigned int)producer_base, (unsigned int)producer_cur_arg_first,
+                   (unsigned int)producer_cur_arg_last, (unsigned int)producer_new_base,
+                   (unsigned int)producer_new_arg_first, (unsigned int)producer_new_arg_last);
+  *handled = 1;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_try_select_simple_local_defs(const uint8_t *buf, size_t bc_pos, int be,
+                                              uint32_t pc, BCReg old_first, BCReg old_last,
+                                              uint8_t *selected, int *out_min_window)
+{
+  uint8_t need[BCMAX_A + 1];
+  int scan = 0;
+  BCReg reg = 0;
+
+  if (old_first > old_last || old_last > BCMAX_A) return 0;
+  memset(need, 0, sizeof(need));
+  for (reg = old_first; reg <= old_last; reg++) {
+    need[reg] = 1;
+  }
+  *out_min_window = (int)pc;
+
+  for (scan = (int)pc - 1; scan >= 0; scan--) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    BCOp op = bc_op(ins);
+    BCReg def = 0;
+
+    if (!tolua_get_slice_def_reg(op, ins, old_first, old_last, &def) || !need[def]) {
+      continue;
+    }
+#ifdef TOLUA_REPACK_DEBUG
+    fprintf(stderr, "[repack] simple-local pick pc=%u op=%s def=%u range=[%u,%u]\n",
+            (unsigned int)scan, tolua_bc_opname(op), (unsigned int)def,
+            (unsigned int)old_first, (unsigned int)old_last);
+#endif
+    selected[scan] = 1;
+    need[def] = 0;
+    *out_min_window = scan;
+  }
+
+  for (reg = old_first; reg <= old_last; reg++) {
+    if (need[reg]) {
+#ifdef TOLUA_REPACK_DEBUG
+      fprintf(stderr, "[repack] simple-local missing reg=%u range=[%u,%u]\n",
+              (unsigned int)reg, (unsigned int)old_first, (unsigned int)old_last);
+#endif
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int tolua_try_fix_cat_arg_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                         uint32_t pc, uint8_t *framesize_io,
+                                         const uint8_t *targets,
+                                         const tolua_bcdebug_ctx *ctx, int *handled)
+{
+  BCIns call = 0;
+  BCIns cat = 0;
+  BCReg old_arg_first = 0;
+  BCReg old_cat_last = 0;
+  BCReg new_cat_first = 0;
+  BCReg new_cat_last = 0;
+  uint8_t *selected = NULL;
+  int min_window = (int)pc;
+  uint32_t interference_pc = UINT32_MAX;
+  BCOp interference_op = BC__MAX;
+  BCReg interference_reg = 0;
+  int scan = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  *handled = 0;
+  if (pc == 0) return TOLUA_BCCONV_OK;
+
+  call = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  cat = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+  if (bc_op(call) != BC_CALL || bc_op(cat) != BC_CAT || bc_c(call) != 2) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  old_arg_first = (BCReg)(bc_a(call) + 1);
+  old_cat_last = bc_c(cat);
+  if (bc_a(cat) != old_arg_first || bc_b(cat) != old_arg_first || old_cat_last < old_arg_first) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  new_cat_first = (BCReg)(old_arg_first + 1);
+  new_cat_last = (BCReg)(old_cat_last + 1);
+  if (new_cat_last > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, call, BC_CALL, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "FR2 CAT-arg shift exceeds register limit");
+  }
+
+  selected = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!selected) {
+    return tolua_failbytecodeproto(ctx, pc, call, BC_CALL, TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 CAT-arg slice");
+  }
+
+  if (!tolua_select_repack_slice(buf, bc_pos, numbc, be, pc - 1, old_arg_first, old_cat_last,
+                                 targets, selected, &min_window,
+                                 &interference_pc, &interference_op, &interference_reg)) {
+    free(selected);
+    return TOLUA_BCCONV_OK;
+  }
+  selected[pc - 1] = 1;
+
+  if (tolua_window_has_nonselected_touch(buf, bc_pos, be, min_window, pc, selected,
+                                         new_cat_first, new_cat_last,
+                                         &interference_pc, &interference_op, &interference_reg)) {
+    free(selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  if (tolua_reg_live_after_pc(buf, bc_pos, numbc, be, pc + 1, new_cat_last)) {
+    free(selected);
+    return TOLUA_BCCONV_OK;
+  }
+
+  for (scan = min_window; scan < (int)pc; scan++) {
+    uint8_t *slot = NULL;
+    BCIns ins = 0;
+    BCOp op = BC__MAX;
+
+    if (!selected[scan]) continue;
+    slot = buf + bc_pos + (size_t)scan * 4;
+    ins = (BCIns)tolua_read_ins(slot, be);
+    op = bc_op(ins);
+    tolua_repack_remap_reg_range(&ins, op, old_arg_first, old_cat_last, new_cat_first);
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  status = tolua_update_framesize_checked(framesize_io, new_cat_last, ctx, pc, call, BC_CALL);
+  free(selected);
+  if (status != TOLUA_BCCONV_OK) return status;
+
+  *handled = 1;
+  return TOLUA_BCCONV_OK;
+}
+
+static int tolua_can_collapse_multires_v1(const uint8_t *buf, size_t bc_pos, uint32_t pc, int be)
+{
+  uint32_t producer_pc = pc;
+  BCIns prev = 0;
+  BCOp prev_op = BC__MAX;
+
+  if (pc == 0) return 0;
+  producer_pc = pc - 1;
+  prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)producer_pc * 4, be);
+  prev_op = bc_op(prev);
+
+  while (prev_op == BC_UCLO) {
+    if (producer_pc == 0) return 0;
+    if ((ptrdiff_t)producer_pc + 1 + bc_j(prev) != (ptrdiff_t)pc) return 0;
+    producer_pc--;
+    prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)producer_pc * 4, be);
+    prev_op = bc_op(prev);
+  }
+
+  return prev_op == BC_CALL || prev_op == BC_VARG;
+}
+
+static void tolua_collect_proto_holes_v1_fr2_local(const uint8_t *buf, size_t bc_pos, uint32_t numbc,
+                                                   int be, tolua_bcshift_map *map)
+{
+  uint32_t pc = 0;
+
+  memset(map, 0, sizeof(*map));
+  for (pc = 0; pc < numbc; pc++) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+    BCOp op = bc_op(ins);
+
+    switch (op) {
+      case BC_CALL:
+      case BC_CALLM:
+      case BC_CALLT:
+      case BC_CALLMT:
+      case BC_ITERC:
+      case BC_ITERN:
+        map->hole[bc_a(ins)] = 1;
+        break;
+      default:
+        break;
+    }
+  }
+
+  tolua_build_shift_map(map);
+}
+
+static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                    uint8_t *framesize_io,
+                                    const tolua_bcdebug_ctx *ctx)
+{
+  uint8_t *targets = NULL;
+  uint32_t pc = 0;
+  int status = TOLUA_BCCONV_OK;
+
+  for (pc = 0; pc < numbc; pc++) {
+    uint8_t *slot = buf + bc_pos + (size_t)pc * 4;
+    BCIns ins = (BCIns)tolua_read_ins(slot, be);
+    BCOp op = tolua_remap_bc_op(bc_op(ins), 1);
+
+    if (op >= BC__MAX) {
+      return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_OPCODE,
+                                     "opcode %u is not recognized after v1 remap",
+                                     (unsigned int)bc_op(ins));
+    }
+
+    setbc_op(&ins, op);
+    tolua_write_ins(slot, (uint32_t)ins, be);
+  }
+
+  for (pc = 0; pc < numbc; pc++) {
+    uint8_t *slot = buf + bc_pos + (size_t)pc * 4;
+    BCIns ins = (BCIns)tolua_read_ins(slot, be);
+    BCOp op = bc_op(ins);
+
+    if (op == BC_CALLM && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+      BCReg new_b = bc_b(ins) ? bc_b(ins) : 2;
+      BCReg new_c = (BCReg)(bc_c(ins) + 2);
+
+      if ((uint32_t)bc_c(ins) + 2 > BCMAX_C) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALLM argument count overflows when downgraded to CALL");
+      }
+      status = tolua_collapse_multires_producer(buf, bc_pos, pc, be, ctx);
+      if (status != TOLUA_BCCONV_OK) return status;
+
+      setbc_op(&ins, BC_CALL);
+      setbc_b(&ins, new_b);
+      setbc_c(&ins, new_c);
+      tolua_write_ins(slot, (uint32_t)ins, be);
+    } else if (op == BC_CALLMT && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+      BCReg new_d = (BCReg)(bc_c(ins) + 2);
+
+      if ((uint32_t)bc_c(ins) + 2 > BCMAX_D) {
+        return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
+                                       "CALLMT argument count overflows when downgraded to CALLT");
+      }
+      status = tolua_collapse_multires_producer(buf, bc_pos, pc, be, ctx);
+      if (status != TOLUA_BCCONV_OK) return status;
+
+      ins = BCINS_AD(BC_CALLT, bc_a(ins), new_d);
+      tolua_write_ins(slot, (uint32_t)ins, be);
+    }
+  }
+
+  targets = (uint8_t *)calloc((size_t)numbc, 1);
+  if (!targets) {
+    return tolua_failbytecodeproto(ctx, 0, 0, BC__MAX, TOLUA_BCCONV_ERR_OUT_OF_MEMORY,
+                                   "failed to allocate FR2 target buffer");
+  }
+
+  tolua_mark_proto_targets(buf, bc_pos, numbc, be, targets);
+
+  for (pc = 0; pc < numbc; pc++) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+    BCOp op = bc_op(ins);
+    BCReg a = bc_a(ins);
+
+    if (op == BC_CALL && bc_c(ins) > 1) {
+      status = tolua_shift_proto_slice_right_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                     (BCReg)(a + 1), (BCReg)(a + bc_c(ins) - 1),
+                                                     framesize_io, targets, ctx);
+    } else if (op == BC_CALLT && bc_d(ins) > 1) {
+      status = tolua_shift_proto_slice_right_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                     (BCReg)(a + 1), (BCReg)(a + bc_d(ins) - 1),
+                                                     framesize_io, targets, ctx);
+    } else if (op == BC_ITERC && bc_c(ins) > 1) {
+      status = tolua_shift_proto_slice_right_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                     (BCReg)(a + 1), (BCReg)(a + bc_c(ins) - 1),
+                                                     framesize_io, targets, ctx);
+    }
+
+    if (status != TOLUA_BCCONV_OK) {
+      free(targets);
+      return status;
+    }
+  }
+
+  free(targets);
+  return TOLUA_BCCONV_OK;
 }
 
 static int tolua_retry_repack_slice_with_readonly_interference(const uint8_t *buf, size_t bc_pos,
@@ -5523,11 +6972,131 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
                               "source chunk already has FR2 flag set");
   }
 
-  /* uLua v1 chunks already load on FR2 runtimes after flipping the FR2 header bit.
-  ** Rewriting/register repacking here over-converts valid bytecode and corrupts
-  ** register lifetimes for arm32->arm64 loads.
-  */
   if (version == 1 && target_fr2) {
+    if (!strip) {
+      uint32_t name_len = 0;
+      if (!tolua_read_uleb128(buf, len, &pos, &name_len)) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "failed to read chunk name length");
+      }
+      if ((size_t)name_len > len - pos) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "chunk name length %u exceeds remaining size %u",
+                                  (unsigned int)name_len, (unsigned int)(len - pos));
+      }
+      chunk_name_pos = pos;
+      chunk_name_len = (size_t)name_len;
+      pos += (size_t)name_len;
+    }
+
+    for (uint32_t proto_index = 0;; proto_index++) {
+      tolua_bcdebug_ctx ctx;
+      size_t proto_len_pos = pos;
+      uint32_t proto_len = 0;
+      size_t p = 0;
+      size_t proto_end = 0;
+      size_t bc_pos = 0;
+      size_t framesize_pos = 0;
+      uint32_t numkgc = 0, numkn = 0, numbc = 0;
+      uint32_t sizedbg = 0;
+
+      ctx.chunk_name = (!strip && chunk_name_len != 0) ? (const char *)(buf + chunk_name_pos) : NULL;
+      ctx.chunk_name_len = chunk_name_len;
+      ctx.proto_index = proto_index;
+
+      if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "failed to read proto length for proto %u",
+                                  (unsigned int)proto_index);
+      }
+      if (proto_len == 0) break;
+      if ((size_t)proto_len > len - pos) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u length %u exceeds remaining chunk size %u",
+                                  (unsigned int)proto_index, (unsigned int)proto_len,
+                                  (unsigned int)(len - pos));
+      }
+
+      p = pos;
+      proto_end = pos + (size_t)proto_len;
+      if (p + 4 > proto_end) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u header is truncated", (unsigned int)proto_index);
+      }
+      framesize_pos = p + 2;
+      p += 4;
+
+      if (!tolua_read_uleb128(buf, len, &p, &numkgc) ||
+          !tolua_read_uleb128(buf, len, &p, &numkn) ||
+          !tolua_read_uleb128(buf, len, &p, &numbc)) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u has malformed KGC/KNUM/BC counts",
+                                  (unsigned int)proto_index);
+      }
+      if (p > proto_end) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u count section exceeds proto bounds",
+                                  (unsigned int)proto_index);
+      }
+      (void)numkgc;
+      (void)numkn;
+
+      if (!strip) {
+        if (!tolua_read_uleb128(buf, len, &p, &sizedbg)) {
+          return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                    "proto %u has malformed debug-size field",
+                                    (unsigned int)proto_index);
+        }
+        if (sizedbg) {
+          uint32_t firstline = 0, numline = 0;
+          if (!tolua_read_uleb128(buf, len, &p, &firstline) ||
+              !tolua_read_uleb128(buf, len, &p, &numline)) {
+            return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                      "proto %u has malformed debug line info",
+                                      (unsigned int)proto_index);
+          }
+        }
+        if (p > proto_end) {
+          return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                    "proto %u debug header exceeds proto bounds",
+                                    (unsigned int)proto_index);
+        }
+      }
+
+      bc_pos = p;
+      if ((size_t)numbc > (proto_end - bc_pos) / 4) {
+        return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
+                                  "proto %u bytecode count %u exceeds proto body",
+                                  (unsigned int)proto_index, (unsigned int)numbc);
+      }
+
+      status = tolua_patch_proto_v1_fr2(buf, bc_pos, numbc, be, &buf[framesize_pos], &ctx);
+      if (status == TOLUA_BCCONV_INTERNAL_INSERT_COPY) {
+        uint8_t *rebuilt = NULL;
+        size_t rebuilt_size = 0;
+        int rebuild_status = TOLUA_BCCONV_OK;
+
+        rebuilt = tolua_rebuild_chunk_with_insert_copy(buf, len, &rebuilt_size, &rebuild_status);
+        if (rebuilt == NULL) return rebuild_status;
+
+        free(buf);
+        buf = rebuilt;
+        len = rebuilt_size;
+        *buf_io = buf;
+        *len_io = len;
+        tolua_clear_pending_insert_copy();
+        pos = proto_len_pos;
+        proto_index--;
+        continue;
+      }
+      if (status != TOLUA_BCCONV_OK) {
+        return status;
+      }
+
+      pos = proto_end;
+    }
+
+    buf[3] = TOLUA_BCDUMP_VERSION;
     buf[flag_pos] = (uint8_t)(flags | TOLUA_BCDUMP_F_FR2);
     *buf_io = buf;
     *len_io = len;

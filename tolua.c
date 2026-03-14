@@ -653,6 +653,23 @@ static int tolua_find_closed_range_hole(const tolua_bcshift_map *map, int first,
   return tolua_find_range_hole(map, first, last + 1, hole_reg);
 }
 
+static int tolua_update_framesize_checked(uint8_t *framesize_io, BCReg new_last,
+                                          const tolua_bcdebug_ctx *ctx, uint32_t pc,
+                                          BCIns ins, BCOp op)
+{
+  uint32_t new_framesize = (uint32_t)new_last + 1u;
+
+  if (new_framesize > BCMAX_A) {
+    return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                   "repack frame size %u exceeds register limit",
+                                   (unsigned int)new_framesize);
+  }
+  if (new_framesize > (uint32_t)*framesize_io) {
+    *framesize_io = (uint8_t)new_framesize;
+  }
+  return TOLUA_BCCONV_OK;
+}
+
 static int tolua_reg_in_closed_range(BCReg reg, BCReg first, BCReg last)
 {
   return first <= last && reg >= first && reg <= last;
@@ -1776,7 +1793,7 @@ static int tolua_range_breaks_future_calls(const uint8_t *buf, size_t bc_pos, ui
     op = bc_op(ins);
     if (op != BC_CALL && op != BC_CALLT && op != BC_ITERC) continue;
     a = bc_a(ins);
-    if (a <= first || a > last) continue;
+    if (a < first || a > last) continue;
     return 1;
   }
 
@@ -2472,7 +2489,17 @@ static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uin
       tolua_write_ins(buf + bc_pos + (size_t)producer_pc * 4, (uint32_t)producer, be);
       setbc_a(&consumer, new_consumer_base);
       tolua_write_ins(buf + bc_pos + (size_t)consumer_pc * 4, (uint32_t)consumer, be);
-      *framesize_io = (uint8_t)(new_producer_last + 1);
+      status = tolua_update_framesize_checked(framesize_io, new_producer_last, ctx,
+                                              consumer_pc, consumer, BC_CALL);
+      if (status != TOLUA_BCCONV_OK) {
+        free(consumer_queue_state);
+        free(consumer_queue_pc);
+        free(consumer_rewrite);
+        free(consumer_state_mask);
+        free(producer_selected);
+        free(consumer_selected);
+        return status;
+      }
       TOLUA_REPACK_LOG(ctx, consumer_pc,
                        "adjacent chain success consumer_new=%u producer_new=[%u,%u]",
                        (unsigned int)new_consumer_base,
@@ -2587,6 +2614,7 @@ static int tolua_try_repack_first_arg_call_chain(uint8_t *buf, size_t bc_pos, ui
   int min_window = 0;
   int have_suffix = 0;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   TOLUA_REPACK_LOG(ctx, consumer_pc,
@@ -2864,8 +2892,17 @@ static int tolua_try_repack_first_arg_call_chain(uint8_t *buf, size_t bc_pos, ui
 
   setbc_a(&consumer, new_consumer_base);
   tolua_write_ins(buf + bc_pos + (size_t)consumer_pc * 4, (uint32_t)consumer, be);
-  if (new_consumer_last + 1 > *framesize_io) {
-    *framesize_io = (uint8_t)(new_consumer_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_consumer_last, ctx,
+                                          consumer_pc, consumer, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(queue_state);
+    free(queue_pc);
+    free(rewrite);
+    free(state_mask);
+    free(suffix_selected);
+    free(producer_selected);
+    free(prefix_selected);
+    return status;
   }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, consumer_pc,
@@ -2909,6 +2946,7 @@ static int tolua_try_repack_adjacent_cat_call_chain(uint8_t *buf, size_t bc_pos,
   int start_window = 0;
   int scan = 0;
   int hole_reg = -1;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
 
@@ -2983,7 +3021,13 @@ static int tolua_try_repack_adjacent_cat_call_chain(uint8_t *buf, size_t bc_pos,
 
   setbc_a(&consumer, new_consumer_base);
   tolua_write_ins(buf + bc_pos + (size_t)consumer_pc * 4, (uint32_t)consumer, be);
-  *framesize_io = (uint8_t)(new_producer_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_producer_last, ctx,
+                                          consumer_pc, consumer, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(producer_selected);
+    free(consumer_selected);
+    return status;
+  }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, consumer_pc,
                    "adjacent cat/call success cat_old=[%u,%u] cat_new=[%u,%u] call_old=[%u,%u] call_new=[%u,%u]",
@@ -3015,6 +3059,7 @@ static int tolua_try_repack_call_result_copy(uint8_t *buf, size_t bc_pos, uint32
   BCReg slice_interference_reg = 0;
   int min_window = (int)producer_pc;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -3091,8 +3136,11 @@ static int tolua_try_repack_call_result_copy(uint8_t *buf, size_t bc_pos, uint32
 
   setbc_a(&producer, new_base);
   tolua_write_ins(buf + bc_pos + (size_t)producer_pc * 4, (uint32_t)producer, be);
-  if (new_last + 1 > *framesize_io) {
-    *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          producer_pc, producer, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
   }
 
   {
@@ -3336,6 +3384,7 @@ static int tolua_try_repack_generic_for_call_arg_copy(uint8_t *buf, size_t bc_po
   int min_window = (int)pc;
   int hole_reg = -1;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -3401,7 +3450,12 @@ static int tolua_try_repack_generic_for_call_arg_copy(uint8_t *buf, size_t bc_po
                                        old_first, old_cluster_last, new_base);
   }
 
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, call, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
+  }
   {
     BCReg copy_dst[1];
     BCReg copy_src[1];
@@ -3553,7 +3607,12 @@ static int tolua_try_repack_generic_for_call_setup(uint8_t *buf, size_t bc_pos, 
                                        old_first, old_cluster_last, new_base);
   }
 
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, call, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
+  }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc, "generic-for success old=[%u,%u] new=[%u,%u] iter_pc=%u loop_end=%u",
                    (unsigned int)old_first, (unsigned int)old_cluster_last,
@@ -3580,6 +3639,7 @@ static int tolua_try_repack_call_arg_gap_copy(uint8_t *buf, size_t bc_pos, uint3
   uint8_t copy_count = 0;
   int hole_reg = -1;
   uint8_t i = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -3609,7 +3669,11 @@ static int tolua_try_repack_call_arg_gap_copy(uint8_t *buf, size_t bc_pos, uint3
 
   setbc_a(&call, new_base);
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)call, be);
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, call, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    return status;
+  }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc,
                    "call gap-copy success old=[%u,%u] new=[%u,%u] insert_pc=%u copies=%u",
@@ -3641,6 +3705,7 @@ static int tolua_try_repack_call_fixed_result_copy(uint8_t *buf, size_t bc_pos, 
   int hole_reg = -1;
   int scan = 0;
   int i = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -3743,8 +3808,11 @@ static int tolua_try_repack_call_fixed_result_copy(uint8_t *buf, size_t bc_pos, 
 
   setbc_a(&call, new_base);
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)call, be);
-  if (new_cluster_last + 1 > *framesize_io) {
-    *framesize_io = (uint8_t)(new_cluster_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_cluster_last, ctx,
+                                          pc, call, BC_CALL);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
   }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc,
@@ -4339,8 +4407,10 @@ static int tolua_try_repack_call(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
 
   setbc_a(&call, new_base);
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)call, be);
-  if (new_last + 1 > *framesize_io) {
-    *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, call, op);
+  if (status != TOLUA_BCCONV_OK) {
+    goto cleanup;
   }
 #ifdef TOLUA_REPACK_DEBUG
   tolua_debug_log_open_tsetm_pairs(buf, bc_pos, numbc, be, "after-call", pc);
@@ -4412,6 +4482,7 @@ static int tolua_try_repack_cat_gap_copy(uint8_t *buf, size_t bc_pos, uint32_t n
   unsigned int cand_base = 0;
   unsigned int pass = 0;
   int hole = -1;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -4464,7 +4535,11 @@ found_cat_gap_copy_base:
   setbc_b(&cat, new_base);
   setbc_c(&cat, new_last);
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)cat, be);
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, cat, BC_CAT);
+  if (status != TOLUA_BCCONV_OK) {
+    return status;
+  }
 
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc,
@@ -4513,7 +4588,7 @@ static int tolua_try_repack_cat(uint8_t *buf, size_t bc_pos, uint32_t numbc, int
                                  &slice_interference_reg)) {
     int inner_changed = 0;
 
-    if (tolua_find_range_hole(map, old_first, old_last, &cat_hole_reg)) {
+    if (tolua_find_closed_range_hole(map, old_first, old_last, &cat_hole_reg)) {
       uint32_t skip_hole_pc = UINT32_MAX;
 
       if (slice_interference_pc != UINT32_MAX &&
@@ -4648,7 +4723,12 @@ found_cat_repack_base:
   setbc_b(&ins, (BCReg)(new_base + (bc_b(ins) - old_first)));
   setbc_c(&ins, (BCReg)(new_base + (bc_c(ins) - old_first)));
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)ins, be);
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, ins, BC_CAT);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
+  }
 #ifdef TOLUA_REPACK_DEBUG
   tolua_debug_log_open_tsetm_pairs(buf, bc_pos, numbc, be, "after-fori", pc);
 #endif
@@ -4660,7 +4740,7 @@ found_cat_repack_base:
 
 static int tolua_try_repack_ret(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                 uint32_t pc, uint8_t *framesize_io, const uint8_t *targets,
-                                int *changed)
+                                const tolua_bcdebug_ctx *ctx, int *changed)
 {
   BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
   BCReg old_first = bc_a(ins);
@@ -4670,6 +4750,7 @@ static int tolua_try_repack_ret(uint8_t *buf, size_t bc_pos, uint32_t numbc, int
   uint8_t *selected = NULL;
   int min_window = (int)pc;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (bc_d(ins) <= 1) return TOLUA_BCCONV_OK;
@@ -4700,7 +4781,12 @@ static int tolua_try_repack_ret(uint8_t *buf, size_t bc_pos, uint32_t numbc, int
 
   setbc_a(&ins, new_base);
   tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)ins, be);
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, ins, BC_RET);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
+  }
   *changed = 1;
 
   free(selected);
@@ -4799,6 +4885,7 @@ static int tolua_try_repack_fori_copy_setup(uint8_t *buf, size_t bc_pos, uint32_
   unsigned int cand_base = 0;
   int hole_reg = -1;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
@@ -4835,7 +4922,11 @@ static int tolua_try_repack_fori_copy_setup(uint8_t *buf, size_t bc_pos, uint32_
     return TOLUA_BCCONV_OK;
   }
 
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, fori, BC_FORI);
+  if (status != TOLUA_BCCONV_OK) {
+    return status;
+  }
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc,
                    "fori copy-setup success old=[%u,%u] new=[%u,%u] loop_end=%u copies=3",
@@ -4860,6 +4951,7 @@ static int tolua_try_repack_fori(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   int hole_reg = -1;
   int min_window = (int)pc;
   int scan = 0;
+  int status = TOLUA_BCCONV_OK;
 
   *changed = 0;
   if (!tolua_find_numeric_for_end(buf, bc_pos, numbc, be, pc, old_base, &loop_end)) {
@@ -4882,8 +4974,8 @@ static int tolua_try_repack_fori(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
                                  targets, selected, &min_window,
                                  NULL, NULL, NULL)) {
     int inner_changed = 0;
-    int status = tolua_try_repack_fori_copy_setup(buf, bc_pos, numbc, be, pc,
-                                                  framesize_io, targets, map, ctx, &inner_changed);
+    status = tolua_try_repack_fori_copy_setup(buf, bc_pos, numbc, be, pc,
+                                              framesize_io, targets, map, ctx, &inner_changed);
     if (status != TOLUA_BCCONV_OK || inner_changed) {
       *changed = inner_changed;
       free(selected);
@@ -4926,7 +5018,12 @@ static int tolua_try_repack_fori(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
                                        old_base, (BCReg)(old_base + 3), new_base);
   }
 
-  *framesize_io = (uint8_t)(new_last + 1);
+  status = tolua_update_framesize_checked(framesize_io, new_last, ctx,
+                                          pc, fori, BC_FORI);
+  if (status != TOLUA_BCCONV_OK) {
+    free(selected);
+    return status;
+  }
   *changed = 1;
 
   free(selected);
@@ -4983,14 +5080,14 @@ static int tolua_try_repack_proto_calls(uint8_t *buf, size_t bc_pos, uint32_t nu
         status = tolua_try_repack_call(buf, bc_pos, numbc, be, pc, framesize_io, targets, &map,
                                        ctx, &changed);
       } else if (op == BC_CAT &&
-                 tolua_find_range_hole(&map, bc_b(ins), bc_c(ins), &hole_reg)) {
+                 tolua_find_closed_range_hole(&map, bc_b(ins), bc_c(ins), &hole_reg)) {
         status = tolua_try_repack_cat(buf, bc_pos, numbc, be, pc, framesize_io, targets, &map,
                                       ctx, &changed);
       } else if (op == BC_RET && bc_d(ins) > 1 &&
                  tolua_find_range_hole(&map, a, (int)a + bc_d(ins) - 2, &hole_reg)) {
-        status = tolua_try_repack_ret(buf, bc_pos, numbc, be, pc, framesize_io, targets, &changed);
+        status = tolua_try_repack_ret(buf, bc_pos, numbc, be, pc, framesize_io, targets, ctx, &changed);
       } else if (op == BC_FORI &&
-                 tolua_find_range_hole(&map, a, (int)a + 3, &hole_reg)) {
+                 tolua_find_closed_range_hole(&map, a, (int)a + 3, &hole_reg)) {
         status = tolua_try_repack_fori(buf, bc_pos, numbc, be, pc, framesize_io, targets, &map,
                                        ctx, &changed);
       } else if (op == BC_ITERC &&
@@ -5215,9 +5312,9 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
       }
       return TOLUA_BCCONV_OK;
     case BC_CAT:
-      if (tolua_find_range_hole(map, bc_b(ins), bc_c(ins), &hole_reg)) {
+      if (tolua_find_closed_range_hole(map, bc_b(ins), bc_c(ins), &hole_reg)) {
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                       "CAT operand range [%d,%d) crosses FR2 hole at register %d",
+                                       "CAT operand range [%d,%d] crosses FR2 hole at register %d",
                                        (int)bc_b(ins), (int)bc_c(ins), hole_reg);
       }
       return TOLUA_BCCONV_OK;
@@ -5226,9 +5323,9 @@ static int tolua_validate_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t 
     case BC_FORL:
     case BC_IFORL:
     case BC_JFORL:
-      if (tolua_find_range_hole(map, a, (int)a + 3, &hole_reg)) {
+      if (tolua_find_closed_range_hole(map, a, (int)a + 3, &hole_reg)) {
         return tolua_failbytecodeproto(ctx, pc, ins, op, TOLUA_BCCONV_ERR_UNSUPPORTED_LAYOUT,
-                                       "numeric for-loop control slots [%d,%d) cross FR2 hole at register %d",
+                                       "numeric for-loop control slots [%d,%d] cross FR2 hole at register %d",
                                        (int)a, (int)a + 3, hole_reg);
       }
       return TOLUA_BCCONV_OK;

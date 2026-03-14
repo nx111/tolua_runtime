@@ -5746,12 +5746,29 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
         (uint8_t)buff[0] == TOLUA_BCDUMP_HEAD1 &&
         (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
         (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3) {
+      int conv_status = TOLUA_BCCONV_OK;
       int patched_sz = 0;
-      char *patched = tolua_convertbytecode(buff, sz, LJ_FR2 ? 1 : 0, &patched_sz);
+      const char *orig_error = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
+      char *patched = tolua_convertbytecodeex(buff, sz, LJ_FR2 ? 1 : 0, &patched_sz, &conv_status);
       if (patched != NULL) {
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
         free(patched);
+      } else {
+        const char *conv_detail = tolua_getlastbytecodedebug();
+        const char *conv_name = tolua_getbytecodeerrorstr(conv_status);
+        if ((conv_detail != NULL && conv_detail[0] != '\0') || conv_status != TOLUA_BCCONV_OK) {
+          const char *detail = (conv_detail != NULL && conv_detail[0] != '\0') ? conv_detail : "conversion failed";
+          const char *name = (conv_name != NULL && conv_name[0] != '\0') ? conv_name : "unknown";
+          if (orig_error != NULL && orig_error[0] != '\0') {
+            lua_pushfstring(L, "%s\n[tolua-bytecode] %s (%s)", orig_error, detail, name);
+          } else {
+            lua_pushfstring(L, "[tolua-bytecode] %s (%s)", detail, name);
+          }
+          if (lua_gettop(L) >= 2) {
+            lua_replace(L, -2); /* Replace original syntax error with richer context. */
+          }
+        }
       }
     }
 #endif

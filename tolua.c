@@ -5523,6 +5523,17 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
                               "source chunk already has FR2 flag set");
   }
 
+  /* uLua v1 chunks already load on FR2 runtimes after flipping the FR2 header bit.
+  ** Rewriting/register repacking here over-converts valid bytecode and corrupts
+  ** register lifetimes for arm32->arm64 loads.
+  */
+  if (version == 1 && target_fr2) {
+    buf[flag_pos] = (uint8_t)(flags | TOLUA_BCDUMP_F_FR2);
+    *buf_io = buf;
+    *len_io = len;
+    return TOLUA_BCCONV_OK;
+  }
+
   if (!strip) {
     uint32_t name_len = 0;
     if (!tolua_read_uleb128(buf, len, &pos, &name_len)) {

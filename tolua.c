@@ -3816,7 +3816,7 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     BCIns ins = (BCIns)tolua_read_ins(slot, be);
     BCOp op = bc_op(ins);
 
-    if (op == BC_CALLM && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+    if (op == BC_CALLM && bc_c(ins) > 0 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
       BCReg new_b = bc_b(ins) ? bc_b(ins) : 2;
       BCReg new_c = (BCReg)(bc_c(ins) + 2);
 
@@ -3831,7 +3831,7 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
       setbc_b(&ins, new_b);
       setbc_c(&ins, new_c);
       tolua_write_ins(slot, (uint32_t)ins, be);
-    } else if (op == BC_CALLMT && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+    } else if (op == BC_CALLMT && bc_c(ins) > 0 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
       BCReg new_d = (BCReg)(bc_c(ins) + 2);
 
       if ((uint32_t)bc_c(ins) + 2 > BCMAX_D) {
@@ -3855,13 +3855,112 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
   tolua_mark_proto_targets(buf, bc_pos, numbc, be, targets);
 
   for (pc = 0; pc < numbc; pc++) {
+    uint8_t *slot = buf + bc_pos + (size_t)pc * 4;
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
     BCOp op = bc_op(ins);
     BCReg a = bc_a(ins);
+    int handled_special_open_callm_chain = 0;
 
-    if (op == BC_CALL && bc_c(ins) > 1) {
+    if (op == BC_CALL &&
+        bc_b(ins) == 0 &&
+        bc_c(ins) == 2 &&
+        pc >= 5 &&
+        pc + 1 < numbc) {
+      BCIns next = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc + 1) * 4, be);
+
+      if (bc_op(next) == BC_CALLM &&
+          bc_c(next) == 0 &&
+          bc_a(next) + 1 == a) {
+        BCIns cat = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+        BCIns kstr = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+        BCIns cat_prefix = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+        BCIns cat_seed = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+        BCIns func_seed = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+        BCReg cat_base = bc_a(cat);
+        BCReg cat_last = bc_c(cat);
+
+        if (bc_op(cat) == BC_CAT &&
+            bc_op(kstr) == BC_KSTR &&
+            bc_op(cat_prefix) == BC_TGETS &&
+            bc_op(cat_seed) == BC_TGETS &&
+            bc_op(func_seed) == BC_TGETS &&
+            bc_a(cat) == bc_b(cat) &&
+            cat_last == (BCReg)(cat_base + 1) &&
+            cat_base == (BCReg)(a + 1) &&
+            bc_a(kstr) == cat_last &&
+            bc_a(cat_prefix) == cat_base &&
+            bc_b(cat_prefix) == cat_base &&
+            bc_a(cat_seed) == cat_base &&
+            bc_a(func_seed) == a) {
+          BCReg new_fn = (BCReg)(a + 1);
+          BCReg new_cat_base = (BCReg)(cat_base + 2);
+          BCReg new_cat_last = (BCReg)(cat_last + 2);
+          uint8_t *func_seed_slot = buf + bc_pos + (size_t)(pc - 5) * 4;
+          uint8_t *cat_seed_slot = buf + bc_pos + (size_t)(pc - 4) * 4;
+          uint8_t *cat_prefix_slot = buf + bc_pos + (size_t)(pc - 3) * 4;
+          uint8_t *kstr_slot = buf + bc_pos + (size_t)(pc - 2) * 4;
+          uint8_t *cat_slot = buf + bc_pos + (size_t)(pc - 1) * 4;
+
+          if (new_cat_last > BCMAX_A) {
+            free(targets);
+            return tolua_failbytecodeproto(ctx, pc, ins, op,
+                                           TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                           "open CALL/CALLM FR2 local align exceeds register limit");
+          }
+
+          setbc_a(&func_seed, new_fn);
+          tolua_write_ins(func_seed_slot, (uint32_t)func_seed, be);
+
+          setbc_a(&cat_seed, new_cat_base);
+          tolua_write_ins(cat_seed_slot, (uint32_t)cat_seed, be);
+
+          setbc_a(&cat_prefix, new_cat_base);
+          setbc_b(&cat_prefix, new_cat_base);
+          tolua_write_ins(cat_prefix_slot, (uint32_t)cat_prefix, be);
+
+          setbc_a(&kstr, new_cat_last);
+          tolua_write_ins(kstr_slot, (uint32_t)kstr, be);
+
+          setbc_a(&cat, new_cat_base);
+          setbc_b(&cat, new_cat_base);
+          setbc_c(&cat, new_cat_last);
+          tolua_write_ins(cat_slot, (uint32_t)cat, be);
+
+          setbc_a(&ins, new_fn);
+          tolua_write_ins(slot, (uint32_t)ins, be);
+
+          status = tolua_update_framesize_checked(framesize_io, new_cat_last, ctx, pc, ins, op);
+          if (status != TOLUA_BCCONV_OK) {
+            free(targets);
+            return status;
+          }
+
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "open CALL/CALLM local align base %u->%u cat [%u,%u]->[%u,%u]",
+                           (unsigned int)a, (unsigned int)new_fn,
+                           (unsigned int)cat_base, (unsigned int)cat_last,
+                           (unsigned int)new_cat_base, (unsigned int)new_cat_last);
+          handled_special_open_callm_chain = 1;
+        }
+      }
+    }
+
+    if (!handled_special_open_callm_chain &&
+        op == BC_CALL &&
+        bc_c(ins) > 1) {
+      BCReg first = (BCReg)(a + 1);
+      BCReg last = (BCReg)(a + bc_c(ins) - 1);
+      if (bc_c(ins) == 2 && pc > 0) {
+        BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+        if (bc_op(prev) == BC_CAT &&
+            bc_a(prev) == first &&
+            bc_b(prev) == first &&
+            bc_c(prev) >= first) {
+          last = bc_c(prev);
+        }
+      }
       status = tolua_shift_proto_slice_right_for_fr2(buf, bc_pos, numbc, be, pc,
-                                                     (BCReg)(a + 1), (BCReg)(a + bc_c(ins) - 1),
+                                                     first, last,
                                                      framesize_io, targets, ctx);
     } else if (op == BC_CALLT && bc_d(ins) > 1) {
       status = tolua_shift_proto_slice_right_for_fr2(buf, bc_pos, numbc, be, pc,
@@ -4530,7 +4629,7 @@ static int tolua_prepare_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t nu
     }
 
     if (target_fr2) {
-      if (op == BC_CALLM) {
+      if (op == BC_CALLM && bc_c(ins) > 0) {
         BCReg new_b = bc_b(ins) ? bc_b(ins) : 2;
         BCReg new_c = (BCReg)(bc_c(ins) + 2);
 
@@ -4546,7 +4645,7 @@ static int tolua_prepare_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t nu
         setbc_b(&ins, new_b);
         setbc_c(&ins, new_c);
         op = BC_CALL;
-      } else if (op == BC_CALLMT) {
+      } else if (op == BC_CALLMT && bc_c(ins) > 0) {
         BCReg new_d = (BCReg)(bc_c(ins) + 2);
 
         if ((uint32_t)bc_c(ins) + 2 > BCMAX_D) {

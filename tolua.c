@@ -2077,6 +2077,72 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
   return status;
 }
 
+static int tolua_find_nearest_reg_writer(const uint8_t *buf, size_t bc_pos, int be,
+                                         uint32_t pc, BCReg reg,
+                                         uint32_t *out_pc, BCOp *out_op, BCIns *out_ins)
+{
+  int scan = 0;
+
+  if (out_pc) *out_pc = UINT32_MAX;
+  if (out_op) *out_op = BC__MAX;
+  if (out_ins) *out_ins = 0;
+  if (pc == 0) return 0;
+
+  for (scan = (int)pc - 1; scan >= 0; scan--) {
+    BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+    BCOp op = bc_op(ins);
+
+    if (!tolua_ins_writes_reg(op, ins, reg)) continue;
+    if (out_pc) *out_pc = (uint32_t)scan;
+    if (out_op) *out_op = op;
+    if (out_ins) *out_ins = ins;
+    return 1;
+  }
+
+  return 0;
+}
+
+static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t bc_pos, int be,
+                                                    uint32_t pc, BCReg old_first, BCReg old_last,
+                                                    BCReg new_first, BCReg new_last,
+                                                    const tolua_bcdebug_ctx *ctx)
+{
+  BCReg old_reg = old_first;
+  BCReg new_reg = new_first;
+  uint32_t old_writer_pc = UINT32_MAX;
+  uint32_t new_writer_pc = UINT32_MAX;
+  BCOp old_writer_op = BC__MAX;
+  BCOp new_writer_op = BC__MAX;
+  BCIns new_writer_ins = 0;
+  int have_old = 0;
+  int have_new = 0;
+
+  (void)old_last;
+  (void)new_last;
+  if (old_first > old_last || new_first > new_last) return 1;
+
+  have_old = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, old_reg,
+                                           &old_writer_pc, &old_writer_op, NULL);
+  have_new = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, new_reg,
+                                           &new_writer_pc, &new_writer_op, &new_writer_ins);
+  if (!have_old || !have_new) return 1;
+  if (new_writer_pc == old_writer_pc) return 1;
+  if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg)) return 1;
+
+  if ((old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
+       old_writer_op == BC_UGET || old_writer_op == BC_GGET) &&
+      (new_writer_op == BC_KPRI || new_writer_op == BC_KNIL || new_writer_op == BC_KSTR ||
+       new_writer_op == BC_KSHORT || new_writer_op == BC_KNUM)) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "reject existing FR2 slice: first-arg seed old=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                     (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                     (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+    return 0;
+  }
+
+  return 1;
+}
+
 static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                                uint32_t pc, BCReg new_first, BCReg new_last,
                                                uint8_t *framesize_io, const uint8_t *targets,
@@ -2111,6 +2177,20 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
                        (unsigned int)bc_a(consumer),
                        (unsigned int)old_first, (unsigned int)old_last,
                        (unsigned int)new_first, (unsigned int)new_last);
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if ((consumer_op == BC_CALL && bc_c(consumer) > 2) ||
+      (consumer_op == BC_CALLT && bc_d(consumer) > 2)) {
+    BCReg old_first = 0;
+    BCReg old_last = 0;
+
+    if (new_first == 0 || new_last == 0) return TOLUA_BCCONV_OK;
+    old_first = (BCReg)(new_first - 1);
+    old_last = (BCReg)(new_last - 1);
+    if (!tolua_existing_fr2_call_args_are_aligned(buf, bc_pos, be, pc,
+                                                  old_first, old_last,
+                                                  new_first, new_last, ctx)) {
       return TOLUA_BCCONV_OK;
     }
   }
@@ -2174,7 +2254,14 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
     BCIns consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
     BCOp consumer_op = bc_op(consumer);
 
-    if (consumer_op == BC_ITERC && pc > 0 && !targets[pc - 1]) {
+    if (consumer_op == BC_CALL || consumer_op == BC_CALLT) {
+      allow_target_entry = 1;
+      insert_pc = pc;
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "copy-fallback allow target-entry reason=%s op=%s insert_pc=%u",
+                       reason ? reason : "unknown", tolua_bc_opname(consumer_op),
+                       (unsigned int)insert_pc);
+    } else if (consumer_op == BC_ITERC && pc > 0 && !targets[pc - 1]) {
       BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
       if (bc_op(prev) == BC_CALL && bc_b(prev) == 1) {
         allow_target_entry = 1;

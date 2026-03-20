@@ -2275,6 +2275,20 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
       return TOLUA_BCCONV_OK;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer) > 2 && pc >= 1) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    if (bc_op(prev1) == BC_TSETM) {
+      BCReg old_first = new_first > 0 ? (BCReg)(new_first - 1) : 0;
+      BCReg old_last = new_last > 0 ? (BCReg)(new_last - 1) : 0;
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip existing FR2 slice for CALL+TSETM variadic chain base=%u old=[%u,%u] new=[%u,%u] tsetm_a=%u",
+                       (unsigned int)bc_a(consumer),
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last,
+                       (unsigned int)bc_a(prev1));
+      return TOLUA_BCCONV_OK;
+    }
+  }
   if ((consumer_op == BC_CALL && bc_c(consumer) > 2) ||
       (consumer_op == BC_CALLT && bc_d(consumer) > 2)) {
     BCReg old_first = 0;

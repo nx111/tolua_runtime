@@ -2008,6 +2008,8 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
                                                uint8_t *framesize_io, const uint8_t *targets,
                                                const tolua_bcdebug_ctx *ctx, int *handled)
 {
+  BCIns consumer = 0;
+  BCOp consumer_op = BC__MAX;
   uint8_t *selected = NULL;
   int min_window = (int)pc;
   uint32_t interference_pc = UINT32_MAX;
@@ -2017,6 +2019,27 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
 
   *handled = 0;
   if (new_first > new_last || new_last > BCMAX_A) return TOLUA_BCCONV_OK;
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  consumer_op = bc_op(consumer);
+  if (consumer_op == BC_CALL && bc_b(consumer) == 1 && bc_c(consumer) > 2 && pc >= 2) {
+    BCReg old_first = (BCReg)(bc_a(consumer) + 1);
+    BCReg old_last = (BCReg)(bc_a(consumer) + bc_c(consumer) - 1);
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    if (bc_op(prev1) == BC_FNEW &&
+        bc_a(prev1) == old_last &&
+        bc_op(prev2) == BC_CAT &&
+        bc_a(prev2) == (BCReg)(old_first + 1) &&
+        bc_b(prev2) == (BCReg)(old_first + 1) &&
+        bc_c(prev2) >= (BCReg)(old_first + 2)) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip existing FR2 slice for CAT+FNEW callback call base=%u old=[%u,%u] new=[%u,%u]",
+                       (unsigned int)bc_a(consumer),
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last);
+      return TOLUA_BCCONV_OK;
+    }
+  }
 
   selected = (uint8_t *)calloc((size_t)numbc, 1);
   if (!selected) {
@@ -2078,10 +2101,19 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
     BCOp consumer_op = bc_op(consumer);
 
     if (consumer_op == BC_ITERC && pc > 0 && !targets[pc - 1]) {
-      insert_pc = pc - 1;
-      TOLUA_REPACK_LOG(ctx, pc,
-                       "copy-fallback retarget reason=%s target-entry insert_pc=%u",
-                       reason ? reason : "unknown", (unsigned int)insert_pc);
+      BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+      if (bc_op(prev) == BC_CALL && bc_b(prev) == 1) {
+        allow_target_entry = 1;
+        insert_pc = pc;
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "copy-fallback keep target-entry reason=%s protect-adjacent-call insert_pc=%u",
+                         reason ? reason : "unknown", (unsigned int)insert_pc);
+      } else {
+        insert_pc = pc - 1;
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "copy-fallback retarget reason=%s target-entry insert_pc=%u",
+                         reason ? reason : "unknown", (unsigned int)insert_pc);
+      }
     } else if (consumer_op == BC_ITERC) {
       allow_target_entry = 1;
       insert_pc = pc;

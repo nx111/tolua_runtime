@@ -3896,7 +3896,8 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     BCIns ins = (BCIns)tolua_read_ins(slot, be);
     BCOp op = bc_op(ins);
 
-    if (op == BC_CALLM && bc_c(ins) > 0 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+    /* Preserve CALLM/CALLMT with C==1 to keep multires call semantics intact. */
+    if (op == BC_CALLM && bc_c(ins) > 1 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
       BCReg new_b = bc_b(ins) ? bc_b(ins) : 2;
       BCReg new_c = (BCReg)(bc_c(ins) + 2);
 
@@ -3911,7 +3912,7 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
       setbc_b(&ins, new_b);
       setbc_c(&ins, new_c);
       tolua_write_ins(slot, (uint32_t)ins, be);
-    } else if (op == BC_CALLMT && bc_c(ins) > 0 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
+    } else if (op == BC_CALLMT && bc_c(ins) > 1 && tolua_can_collapse_multires_v1(buf, bc_pos, pc, be)) {
       BCReg new_d = (BCReg)(bc_c(ins) + 2);
 
       if ((uint32_t)bc_c(ins) + 2 > BCMAX_D) {

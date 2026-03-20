@@ -2111,14 +2111,17 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   BCReg new_reg = new_first;
   uint32_t old_writer_pc = UINT32_MAX;
   uint32_t new_writer_pc = UINT32_MAX;
+  uint32_t old_next_writer_pc = UINT32_MAX;
   BCOp old_writer_op = BC__MAX;
   BCOp new_writer_op = BC__MAX;
+  BCOp old_next_writer_op = BC__MAX;
   BCIns old_writer_ins = 0;
   BCIns new_writer_ins = 0;
+  BCIns old_next_writer_ins = 0;
   int have_old = 0;
   int have_new = 0;
+  int have_old_next = 0;
 
-  (void)old_last;
   (void)new_last;
   if (old_first > old_last || new_first > new_last) return 1;
 
@@ -2127,6 +2130,63 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   have_new = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, new_reg,
                                            &new_writer_pc, &new_writer_op, &new_writer_ins);
   if (!have_old || !have_new) return 1;
+  if (old_last > old_first) {
+    have_old_next = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, (BCReg)(old_reg + 1),
+                                                  &old_next_writer_pc, &old_next_writer_op, &old_next_writer_ins);
+    if (have_old_next &&
+        (old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
+         old_writer_op == BC_GGET || old_writer_op == BC_UGET) &&
+        (new_writer_op == BC_TNEW || new_writer_op == BC_TDUP ||
+         new_writer_op == BC_TGETS || new_writer_op == BC_TGETV || new_writer_op == BC_TGETB) &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_next_writer_op == new_writer_op &&
+        old_next_writer_op != BC_CALL &&
+        old_next_writer_op != BC_CALLM &&
+        old_next_writer_op != BC_CALLT &&
+        old_next_writer_op != BC_CALLMT &&
+        old_next_writer_op != BC_VARG &&
+        old_next_writer_op != BC_ITERC &&
+        old_next_writer_op != BC_ITERN) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: new-first writer matches old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                       (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+      return 0;
+    }
+    if (have_old_next &&
+        new_writer_op == BC_MOV) {
+      BCReg mov_src = bc_d(new_writer_ins);
+      uint32_t src_writer_pc = UINT32_MAX;
+      BCOp src_writer_op = BC__MAX;
+      BCIns src_writer_ins = 0;
+      int have_src_writer = 0;
+
+      have_src_writer = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, mov_src,
+                                                      &src_writer_pc, &src_writer_op, &src_writer_ins);
+      (void)src_writer_ins;
+      if (have_src_writer &&
+          src_writer_pc == old_next_writer_pc &&
+          src_writer_op == old_next_writer_op &&
+          old_next_writer_pc + 12 >= pc &&
+          old_next_writer_op != BC_CALL &&
+          old_next_writer_op != BC_CALLM &&
+          old_next_writer_op != BC_CALLT &&
+          old_next_writer_op != BC_CALLMT &&
+          old_next_writer_op != BC_VARG &&
+          old_next_writer_op != BC_ITERC &&
+          old_next_writer_op != BC_ITERN) {
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "reject existing FR2 slice: MOV first-arg pulls old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s src=%u)",
+                         (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                         (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                         (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op),
+                         (unsigned int)mov_src);
+        return 0;
+      }
+    }
+  }
   if (new_writer_pc == old_writer_pc) return 1;
   if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg)) return 1;
 

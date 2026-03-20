@@ -2113,6 +2113,7 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   uint32_t new_writer_pc = UINT32_MAX;
   BCOp old_writer_op = BC__MAX;
   BCOp new_writer_op = BC__MAX;
+  BCIns old_writer_ins = 0;
   BCIns new_writer_ins = 0;
   int have_old = 0;
   int have_new = 0;
@@ -2122,17 +2123,51 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   if (old_first > old_last || new_first > new_last) return 1;
 
   have_old = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, old_reg,
-                                           &old_writer_pc, &old_writer_op, NULL);
+                                           &old_writer_pc, &old_writer_op, &old_writer_ins);
   have_new = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, new_reg,
                                            &new_writer_pc, &new_writer_op, &new_writer_ins);
   if (!have_old || !have_new) return 1;
   if (new_writer_pc == old_writer_pc) return 1;
   if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg)) return 1;
 
+  /* Guard method-style calls seeded by MOV self (usually from reg 0) and
+     function loaded from object field (TGETS base=0). Reusing existing FR2
+     slice here can silently drop/reorder self. */
+  if (old_writer_op == BC_MOV && bc_d(old_writer_ins) == 0 &&
+      (new_writer_op == BC_KSTR || new_writer_op == BC_CAT ||
+       new_writer_op == BC_TGETS || new_writer_op == BC_TGETV ||
+       new_writer_op == BC_TGETB || new_writer_op == BC_GGET ||
+       new_writer_op == BC_UGET) &&
+      (new_writer_op != BC_MOV || bc_d(new_writer_ins) != bc_d(old_writer_ins))) {
+    BCReg func_reg = old_reg > 0 ? (BCReg)(old_reg - 1) : 0;
+    uint32_t func_writer_pc = UINT32_MAX;
+    BCOp func_writer_op = BC__MAX;
+    BCIns func_writer_ins = 0;
+    int have_func_writer = 0;
+
+    if (old_reg > 0) {
+      have_func_writer = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, func_reg,
+                                                       &func_writer_pc, &func_writer_op, &func_writer_ins);
+    }
+
+    if (have_func_writer &&
+        func_writer_op == BC_TGETS &&
+        bc_b(func_writer_ins) == 0 &&
+        func_writer_pc + 8 >= pc) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: method-like MOV-self seed old=%u(pc=%u,%s src=%u) new=%u(pc=%u,%s)",
+                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                       (unsigned int)bc_d(old_writer_ins),
+                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+      return 0;
+    }
+  }
+
   if ((old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
        old_writer_op == BC_UGET || old_writer_op == BC_GGET) &&
       (new_writer_op == BC_KPRI || new_writer_op == BC_KNIL || new_writer_op == BC_KSTR ||
-       new_writer_op == BC_KSHORT || new_writer_op == BC_KNUM)) {
+       new_writer_op == BC_KSHORT || new_writer_op == BC_KNUM) &&
+      old_writer_pc + 4 >= pc) {
     TOLUA_REPACK_LOG(ctx, pc,
                      "reject existing FR2 slice: first-arg seed old=%u(pc=%u,%s) new=%u(pc=%u,%s)",
                      (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),

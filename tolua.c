@@ -612,6 +612,34 @@ static int tolua_is_reg_mode(BCMode mode)
   return mode == BCMdst || mode == BCMbase || mode == BCMvar || mode == BCMrbase;
 }
 
+static int tolua_op_a_is_reg(BCOp op, BCMode mode)
+{
+  if (tolua_is_reg_mode(mode)) return 1;
+  switch (op) {
+    case BC_IST:
+    case BC_ISF:
+    case BC_ISTC:
+    case BC_ISFC:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int tolua_op_a_is_source_reg(BCOp op, BCMode mode)
+{
+  if (mode != BCMdst && tolua_is_reg_mode(mode)) return 1;
+  switch (op) {
+    case BC_IST:
+    case BC_ISF:
+    case BC_ISTC:
+    case BC_ISFC:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 static void tolua_build_shift_map(tolua_bcshift_map *map)
 {
   uint16_t count = 0;
@@ -798,7 +826,7 @@ static int tolua_ins_reads_reg(BCOp op, BCIns ins, BCReg reg)
 
   {
     BCMode mode = bcmode_a(op);
-    if (mode != BCMdst && tolua_is_reg_mode(mode) && a == reg) return 1;
+    if (tolua_op_a_is_source_reg(op, mode) && a == reg) return 1;
   }
 
   return 0;
@@ -839,7 +867,7 @@ static void tolua_repack_remap_reg_range(BCIns *ins, BCOp op, BCReg old_first, B
   BCMode mode = bcmode_a(op);
   BCReg reg = 0;
 
-  if (tolua_is_reg_mode(mode)) {
+  if (tolua_op_a_is_reg(op, mode)) {
     reg = bc_a(*ins);
     if (tolua_reg_in_closed_range(reg, old_first, old_last)) {
       setbc_a(ins, (BCReg)(new_first + (reg - old_first)));
@@ -991,7 +1019,7 @@ static int tolua_rewrite_ins_source_reg(BCIns *ins, BCOp op, BCReg old_reg, BCRe
 
   {
     BCMode mode = bcmode_a(op);
-    if (mode != BCMdst && tolua_is_reg_mode(mode) && bc_a(*ins) == old_reg) {
+    if (tolua_op_a_is_source_reg(op, mode) && bc_a(*ins) == old_reg) {
       setbc_a(ins, new_reg);
       changed = 1;
     }
@@ -1843,6 +1871,26 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       BCIns consumer_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
       BCIns loop_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)first_touch_pc * 4, be);
       if (bc_a(loop_ins) == bc_a(consumer_ins)) {
+        int copy_handled = 0;
+        int copy_status = TOLUA_BCCONV_OK;
+
+        copy_status = tolua_try_insert_copy_fallback_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                             old_first, old_last, new_first, new_last,
+                                                             framesize_io, targets, ctx,
+                                                             "paired-iterl-live-after", &copy_handled);
+        if (copy_status == TOLUA_BCCONV_INTERNAL_INSERT_COPY) {
+          free(selected);
+          return copy_status;
+        }
+        if (copy_status != TOLUA_BCCONV_OK) {
+          free(selected);
+          return copy_status;
+        }
+        if (copy_handled) {
+          free(selected);
+          return TOLUA_BCCONV_OK;
+        }
+
         deferred_overwrite = 1;
         TOLUA_REPACK_LOG(ctx, pc,
                          "allow live-after reg=%u due to paired %s at pc=%u",
@@ -7942,7 +7990,7 @@ static int tolua_rewrite_proto_ins(const uint8_t *buf, size_t bc_pos, uint32_t n
   if (status != TOLUA_BCCONV_OK) return status;
 
   mode = bcmode_a(op);
-  if (!mapped_tsetm_a && tolua_is_reg_mode(mode)) {
+  if (!mapped_tsetm_a && tolua_op_a_is_reg(op, mode)) {
     reg = bc_a(*ins);
     if (!tolua_map_reg(map, reg, &reg)) {
       return tolua_failbytecodeproto(ctx, pc, *ins, op, TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,

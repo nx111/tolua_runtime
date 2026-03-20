@@ -1634,6 +1634,9 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                                  uint8_t *framesize_io, const uint8_t *targets,
                                                  const tolua_bcdebug_ctx *ctx)
 {
+  BCIns consumer_ins = 0;
+  BCOp consumer_op = BC__MAX;
+  int allow_existing_slice = 1;
   BCReg new_first = 0;
   BCReg new_last = 0;
   uint8_t *selected = NULL;
@@ -1645,6 +1648,8 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
   int scan = 0;
 
   if (old_first > old_last) return TOLUA_BCCONV_OK;
+  consumer_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  consumer_op = bc_op(consumer_ins);
   if (old_first == old_last && pc > 0) {
     BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     if (bc_op(prev) == BC_CALL && bc_b(prev) == 2 && bc_a(prev) == (BCReg)(old_first + 1)) {
@@ -1662,6 +1667,21 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
 
   new_first = (BCReg)(old_first + 1);
   new_last = (BCReg)(old_last + 1);
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 4 && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+
+    /* Guard a known false-positive shape:
+       old args are prepared as rX=TGETS, rX+1=MOV, rX+2=MOV right before CALL.
+       In this shape, accepting "existing FR2 slice" may silently shift arg order. */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_a(prev2) == (BCReg)(old_first + 1) &&
+        bc_a(prev1) == (BCReg)(old_first + 2) &&
+        bc_d(prev2) != old_first) {
+      allow_existing_slice = 0;
+    }
+  }
   if (new_last > BCMAX_A) {
     return tolua_failbytecodeproto(ctx, pc,
                                    (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
@@ -1699,10 +1719,12 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       interference_reg = 0;
     } else {
       free(selected);
-      status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
-                                                   framesize_io, targets, ctx, &handled);
-      if (status != TOLUA_BCCONV_OK) return status;
-      if (handled) return TOLUA_BCCONV_OK;
+      if (allow_existing_slice) {
+        status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                     framesize_io, targets, ctx, &handled);
+        if (status != TOLUA_BCCONV_OK) return status;
+        if (handled) return TOLUA_BCCONV_OK;
+      }
       status = tolua_try_fix_call_selfdef_chain_for_fr2(buf, bc_pos, numbc, be, pc,
                                                         framesize_io, targets, ctx, &handled);
       if (status != TOLUA_BCCONV_OK) return status;
@@ -1747,12 +1769,14 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                          &interference_pc, &interference_op, &interference_reg)) {
     int handled = 0;
 
-    status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
-                                                 framesize_io, targets, ctx, &handled);
-    if (status != TOLUA_BCCONV_OK) return status;
-    if (handled) {
-      free(selected);
-      return TOLUA_BCCONV_OK;
+    if (allow_existing_slice) {
+      status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                   framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) return status;
+      if (handled) {
+        free(selected);
+        return TOLUA_BCCONV_OK;
+      }
     }
     status = tolua_try_fix_call_selfdef_chain_for_fr2(buf, bc_pos, numbc, be, pc,
                                                       framesize_io, targets, ctx, &handled);
@@ -1853,15 +1877,17 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       }
     }
 
-    status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
-                                                 framesize_io, targets, ctx, &handled);
-    if (status != TOLUA_BCCONV_OK) {
-      free(selected);
-      return status;
-    }
-    if (handled) {
-      free(selected);
-      return TOLUA_BCCONV_OK;
+    if (allow_existing_slice) {
+      status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc, new_first, new_last,
+                                                   framesize_io, targets, ctx, &handled);
+      if (status != TOLUA_BCCONV_OK) {
+        free(selected);
+        return status;
+      }
+      if (handled) {
+        free(selected);
+        return TOLUA_BCCONV_OK;
+      }
     }
     deferred_overwrite = tolua_future_fr2_arg_shift_writes_reg(buf, bc_pos, numbc, be, pc + 1, new_last);
     if (!deferred_overwrite &&

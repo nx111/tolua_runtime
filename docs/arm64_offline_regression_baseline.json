@@ -1,0 +1,38 @@
+﻿[
+    {
+        "file":  "main.lua",
+        "exit_code":  0,
+        "converted_lines":  1,
+        "conversion_failed":  0,
+        "register_overflow":  0,
+        "kstr_tdup_rejects":  0,
+        "table_style_guards":  0,
+        "copy_fallback_hits":  0,
+        "log_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\main.lua.dbg.log",
+        "out_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\main.lua.fr2.bin"
+    },
+    {
+        "file":  "battle.lua",
+        "exit_code":  0,
+        "converted_lines":  1,
+        "conversion_failed":  0,
+        "register_overflow":  0,
+        "kstr_tdup_rejects":  21,
+        "table_style_guards":  0,
+        "copy_fallback_hits":  224,
+        "log_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\battle.lua.dbg.log",
+        "out_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\battle.lua.fr2.bin"
+    },
+    {
+        "file":  "migong.lua",
+        "exit_code":  0,
+        "converted_lines":  1,
+        "conversion_failed":  0,
+        "register_overflow":  0,
+        "kstr_tdup_rejects":  0,
+        "table_style_guards":  0,
+        "copy_fallback_hits":  4,
+        "log_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\migong.lua.dbg.log",
+        "out_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\migong.lua.fr2.bin"
+    }
+]

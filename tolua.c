@@ -1710,6 +1710,31 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       allow_existing_slice = 0;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 && pc >= 4) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCOp prev3_op = bc_op(prev3);
+    BCOp prev4_op = bc_op(prev4);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* Guard table-style two-arg calls prepared as:
+       GGET/TGET* func; TGET* method; MOV arg1; MOV arg2; CALL.
+       Existing FR2 slice reuse here can keep args at A+1/A+2 (FR1 layout). */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_a(prev1) == old_last &&
+        bc_a(prev2) == old_first &&
+        (prev3_op == BC_TGETS || prev3_op == BC_TGETV || prev3_op == BC_TGETB) &&
+        bc_a(prev3) == func_reg &&
+        bc_b(prev3) == func_reg &&
+        bc_a(prev4) == func_reg &&
+        (prev4_op == BC_GGET || prev4_op == BC_UGET ||
+         prev4_op == BC_TGETS || prev4_op == BC_TGETV || prev4_op == BC_TGETB)) {
+      allow_existing_slice = 0;
+    }
+  }
   if (new_last > BCMAX_A) {
     return tolua_failbytecodeproto(ctx, pc,
                                    (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
@@ -2192,6 +2217,22 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
         old_next_writer_op != BC_ITERN) {
       TOLUA_REPACK_LOG(ctx, pc,
                        "reject existing FR2 slice: new-first writer matches old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                       (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+      return 0;
+    }
+    if (have_old_next &&
+        old_last >= (BCReg)(old_first + 2) &&
+        old_writer_op == BC_KSTR &&
+        old_next_writer_op == BC_TDUP &&
+        new_writer_op == BC_TDUP &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_writer_pc + 12 >= pc &&
+        old_next_writer_pc + 8 >= pc) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: KSTR+TDUP new-first aliases old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
                        (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
                        (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
                        (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));

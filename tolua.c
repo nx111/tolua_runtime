@@ -1693,6 +1693,23 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       allow_existing_slice = 0;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCOp prev2_op = bc_op(prev2);
+
+    /* Two-arg CALL shape: old arg1 from TGET* or UGET/GGET into old_first and
+       old arg2 from MOV into old_last right before CALL. Reusing existing FR2
+       slice here keeps arg1 at A+1 and can swap/drop call args on FR2. */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_a(prev1) == old_last &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+         prev2_op == BC_UGET || prev2_op == BC_GGET) &&
+        bc_a(prev2) == old_first &&
+        bc_d(prev1) != old_first) {
+      allow_existing_slice = 0;
+    }
+  }
   if (new_last > BCMAX_A) {
     return tolua_failbytecodeproto(ctx, pc,
                                    (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),

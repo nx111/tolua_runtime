@@ -1691,6 +1691,16 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                    (unsigned int)old_first, (unsigned int)old_last,
                                    (unsigned int)new_first, (unsigned int)new_last);
   }
+  if (allow_existing_slice &&
+      ((consumer_op == BC_CALL && bc_c(consumer_ins) >= 2) ||
+       (consumer_op == BC_CALLT && bc_d(consumer_ins) >= 2))) {
+    int handled = 0;
+    status = tolua_try_accept_existing_fr2_slice(buf, bc_pos, numbc, be, pc,
+                                                 new_first, new_last,
+                                                 framesize_io, targets, ctx, &handled);
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) return TOLUA_BCCONV_OK;
+  }
 
   selected = (uint8_t *)calloc((size_t)numbc, 1);
   if (!selected) {
@@ -2161,6 +2171,7 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
       return 0;
     }
     if (have_old_next &&
+        old_last >= (BCReg)(old_first + 2) &&
         old_writer_op == BC_MOV &&
         old_next_writer_op == BC_MOV &&
         old_next_writer_pc == new_writer_pc &&
@@ -2175,14 +2186,33 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
         old_next_writer_op != BC_VARG &&
         old_next_writer_op != BC_ITERC &&
         old_next_writer_op != BC_ITERN &&
-        old_writer_pc + 8 >= pc &&
-        old_next_writer_pc + 4 >= pc) {
-      TOLUA_REPACK_LOG(ctx, pc,
-                       "reject existing FR2 slice: generic new-first matches old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
-                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
-                       (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
-                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
-      return 0;
+        old_writer_pc + 12 >= pc &&
+        old_next_writer_pc + 8 >= pc) {
+      BCReg func_reg = old_reg > 0 ? (BCReg)(old_reg - 1) : 0;
+      uint32_t func_writer_pc = UINT32_MAX;
+      BCOp func_writer_op = BC__MAX;
+      BCIns func_writer_ins = 0;
+      int have_func_writer = 0;
+      int method_self_seed = 0;
+
+      if (old_reg > 0) {
+        have_func_writer = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, func_reg,
+                                                         &func_writer_pc, &func_writer_op, &func_writer_ins);
+      }
+      if (have_func_writer &&
+          (func_writer_op == BC_TGETS || func_writer_op == BC_TGETV || func_writer_op == BC_TGETB) &&
+          bc_d(old_writer_ins) == bc_b(func_writer_ins)) {
+        method_self_seed = 1;
+      }
+
+      if (method_self_seed) {
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "reject existing FR2 slice: generic new-first matches old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                         (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                         (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                         (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+        return 0;
+      }
     }
     if (have_old_next &&
         new_writer_op == BC_MOV) {

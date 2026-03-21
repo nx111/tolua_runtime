@@ -2150,7 +2150,6 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
             new_writer_op == BC_TGETS || new_writer_op == BC_TGETV || new_writer_op == BC_TGETB) &&
            old_writer_pc + 12 >= pc)) ||
          (old_writer_op == BC_MOV &&
-          bc_d(old_writer_ins) <= 8 &&
           (new_writer_op == BC_CAT || new_writer_op == BC_KSTR) &&
           old_writer_pc + 32 >= pc)) &&
         old_next_writer_pc == new_writer_pc &&

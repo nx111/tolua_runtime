@@ -2134,14 +2134,18 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
     have_old_next = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, (BCReg)(old_reg + 1),
                                                   &old_next_writer_pc, &old_next_writer_op, &old_next_writer_ins);
     if (have_old_next &&
-        (old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
-         old_writer_op == BC_GGET || old_writer_op == BC_UGET) &&
-        (new_writer_op == BC_TNEW || new_writer_op == BC_TDUP ||
-         new_writer_op == BC_TGETS || new_writer_op == BC_TGETV || new_writer_op == BC_TGETB) &&
+        ((((old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
+            old_writer_op == BC_GGET || old_writer_op == BC_UGET) &&
+           (new_writer_op == BC_TNEW || new_writer_op == BC_TDUP ||
+            new_writer_op == BC_TGETS || new_writer_op == BC_TGETV || new_writer_op == BC_TGETB) &&
+           old_writer_pc + 12 >= pc)) ||
+         (old_writer_op == BC_MOV &&
+          bc_d(old_writer_ins) == 0 &&
+          new_writer_op == BC_CAT &&
+          old_writer_pc + 20 >= pc)) &&
         old_next_writer_pc == new_writer_pc &&
         old_next_writer_pc != old_writer_pc &&
         old_next_writer_op == new_writer_op &&
-        old_writer_pc + 12 >= pc &&
         old_next_writer_op != BC_CALL &&
         old_next_writer_op != BC_CALLM &&
         old_next_writer_op != BC_CALLT &&

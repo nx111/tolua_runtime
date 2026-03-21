@@ -2141,6 +2141,7 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
         old_next_writer_pc == new_writer_pc &&
         old_next_writer_pc != old_writer_pc &&
         old_next_writer_op == new_writer_op &&
+        old_writer_pc + 12 >= pc &&
         old_next_writer_op != BC_CALL &&
         old_next_writer_op != BC_CALLM &&
         old_next_writer_op != BC_CALLT &&

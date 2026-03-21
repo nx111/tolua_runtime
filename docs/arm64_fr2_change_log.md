@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-21 22:56  
+最后更新：2026-03-21 22:58  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,8 +13,8 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
-| 2026-03-21 | `待提交` | 新增 `tools/check_arm64_fr2_log.ps1`，强制校验 `tolua.c/arm64 so` 改动必须同步更新日志 | 防止“改代码不记账”导致循环回归 | 已启用，本地检查通过 |
-| 2026-03-21 | `待提交` | 新增两条窄规则：`MOV+MOV+TGET*+CALL(C=3)` 的 table-style 两参调用防错位；`KSTR+TDUP` 识别 `new_first` 误绑 `old_second` | `PatchMigong insert` 与 `RegisterWorkflowForSkills` 参数错位 | 本地反汇编已验证目标点修正，待真机 |
+| 2026-03-21 | `5a9ceaa` | 新增 `tools/check_arm64_fr2_log.ps1`，强制校验 `tolua.c/arm64 so` 改动必须同步更新日志 | 防止“改代码不记账”导致循环回归 | 已启用，本地检查通过 |
+| 2026-03-21 | `5a9ceaa` | 新增两条窄规则：`MOV+MOV+TGET*+CALL(C=3)` 的 table-style 两参调用防错位；`KSTR+TDUP` 识别 `new_first` 误绑 `old_second` | `PatchMigong insert` 与 `RegisterWorkflowForSkills` 参数错位 | 本地反汇编已验证目标点修正，待真机 |
 | 2026-03-21 | `bbb3af3` | 用 NDK r21e 重编 `arm64-v8a/libtolua.so` 并同步到插件目录 | 同步最新转换逻辑到真机 | 已发布，需结合真机日志判断 |
 | 2026-03-21 | `c1ca748` | 收窄两参数 MOV 链规则，仅保留低寄存器形态（old src=0 且 old2 src=1/3）；移除过宽规则（`dense arg block`、`stale new-last`） | 避免“修 Log 时误伤其它调用链” | 部分回落，但仍有 battle/migong 两个主线错误 |
 | 2026-03-21 | `b27ec3c` | 强制两参数立即调用准备路径走 repack（battle hooks） | battle 某些参数错位 | 修复局部，同时引入后续回归风险 |
@@ -49,8 +49,8 @@
 
 | 日期 | 构建/Commit | 入口 | 首条报错指纹 | 归类 | 处理状态 |
 |---|---|---|---|---|---|
-| 2026-03-21 | `待提交` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | FR2 参数错位（KSTR+TDUP 邻位） | 本地反汇编已修，待真机 |
-| 2026-03-21 | `待提交` | `jygame/migong.lua` | `PatchMigong: bad argument #1 to 'insert' (table expected, got string)` | table-style 两参调用错位 | 本地反汇编已修，待真机 |
+| 2026-03-21 | `5a9ceaa` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | FR2 参数错位（KSTR+TDUP 邻位） | 本地反汇编已修，待真机 |
+| 2026-03-21 | `5a9ceaa` | `jygame/migong.lua` | `PatchMigong: bad argument #1 to 'insert' (table expected, got string)` | table-style 两参调用错位 | 本地反汇编已修，待真机 |
 
 ## 7. 提交前检查清单（必须）
 

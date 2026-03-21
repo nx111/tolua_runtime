@@ -2198,6 +2198,29 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
       return 0;
     }
     if (have_old_next &&
+        old_last == (BCReg)(old_first + 1) &&
+        old_writer_op == BC_MOV &&
+        old_next_writer_op == BC_MOV &&
+        new_writer_op == BC_MOV &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_next_writer_pc <= old_writer_pc + 2 &&
+        bc_d(old_writer_ins) == 0 &&
+        (bc_d(old_next_writer_ins) == 1 || bc_d(old_next_writer_ins) == 3) &&
+        bc_d(old_writer_ins) != bc_d(old_next_writer_ins) &&
+        old_writer_pc + 12 >= pc &&
+        old_next_writer_pc + 8 >= pc) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: two-arg low-src MOV chain new-first aliases old-second old=%u(pc=%u,%s src=%u) old2=%u(pc=%u,%s src=%u) new=%u(pc=%u,%s src=%u)",
+                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                       (unsigned int)bc_d(old_writer_ins),
+                       (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                       (unsigned int)bc_d(old_next_writer_ins),
+                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op),
+                       (unsigned int)bc_d(new_writer_ins));
+      return 0;
+    }
+    if (have_old_next &&
         old_last >= (BCReg)(old_first + 2) &&
         old_writer_op == BC_MOV &&
         old_next_writer_op == BC_MOV &&

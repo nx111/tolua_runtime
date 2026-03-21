@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-21 23:31  
+最后更新：2026-03-21 23:30  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,7 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
-| 2026-03-21 | `待提交` | 新增 `tools/run_arm64_offline_regression.ps1` + `docs/arm64_offline_regression_baseline.json`，实现离线门禁（重编调试转换器、批量转换 main/battle/migong、日志指纹比对） | 降低每次改动都上真机的频率 | 本地脚本已跑通，可用于自主回归 |
+| 2026-03-21 | `9aa9e73` | 新增 `tools/run_arm64_offline_regression.ps1` + `docs/arm64_offline_regression_baseline.json`，实现离线门禁（重编调试转换器、批量转换 main/battle/migong、日志指纹比对） | 降低每次改动都上真机的频率 | 本地脚本已跑通，可用于自主回归 |
 | 2026-03-21 | `5a9ceaa` | 新增 `tools/check_arm64_fr2_log.ps1`，强制校验 `tolua.c/arm64 so` 改动必须同步更新日志 | 防止“改代码不记账”导致循环回归 | 已启用，本地检查通过 |
 | 2026-03-21 | `5a9ceaa` | 新增两条窄规则：`MOV+MOV+TGET*+CALL(C=3)` 的 table-style 两参调用防错位；`KSTR+TDUP` 识别 `new_first` 误绑 `old_second` | `PatchMigong insert` 与 `RegisterWorkflowForSkills` 参数错位 | 本地反汇编已验证目标点修正，待真机 |
 | 2026-03-21 | `bbb3af3` | 用 NDK r21e 重编 `arm64-v8a/libtolua.so` 并同步到插件目录 | 同步最新转换逻辑到真机 | 已发布，需结合真机日志判断 |

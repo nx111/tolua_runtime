@@ -1652,8 +1652,19 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
   consumer_op = bc_op(consumer_ins);
   if (old_first == old_last && pc > 0) {
     BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
-    if (bc_op(prev) == BC_CALL && bc_b(prev) == 2 && bc_a(prev) == (BCReg)(old_first + 1)) {
+    BCOp prev_op = bc_op(prev);
+    if (prev_op == BC_CALL && bc_b(prev) == 2 && bc_a(prev) == (BCReg)(old_first + 1)) {
       return TOLUA_BCCONV_OK;
+    }
+    if (tolua_ins_writes_reg(prev_op, prev, old_first) &&
+        prev_op != BC_CALL &&
+        prev_op != BC_CALLM &&
+        prev_op != BC_CALLT &&
+        prev_op != BC_CALLMT &&
+        prev_op != BC_VARG &&
+        prev_op != BC_ITERC &&
+        prev_op != BC_ITERN) {
+      allow_existing_slice = 0;
     }
   }
   if (old_last >= BCMAX_A) {
@@ -2247,6 +2258,9 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   }
   if (new_writer_pc == old_writer_pc) return 1;
   if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg) &&
+      new_writer_op != BC_CALL &&
+      new_writer_op != BC_CALLM &&
+      new_writer_op != BC_VARG &&
       new_writer_op != BC_ITERL &&
       new_writer_op != BC_IITERL &&
       new_writer_op != BC_JITERL &&

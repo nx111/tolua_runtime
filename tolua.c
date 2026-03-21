@@ -2193,7 +2193,24 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
     }
   }
   if (new_writer_pc == old_writer_pc) return 1;
-  if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg)) return 1;
+  if (tolua_ins_reads_reg(new_writer_op, new_writer_ins, old_reg) &&
+      new_writer_op != BC_ITERL &&
+      new_writer_op != BC_IITERL &&
+      new_writer_op != BC_JITERL &&
+      new_writer_op != BC_ITERC &&
+      new_writer_op != BC_ITERN) return 1;
+
+  /* Source FR1 call arg1 lives in old_reg(A+1). If old_reg is written much
+     later than new_reg(A+2) right before the call, reusing the existing FR2
+     slice would keep a stale value in new_reg and drop the actual arg write. */
+  if (old_writer_pc > new_writer_pc &&
+      old_writer_pc + 8 >= pc) {
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "reject existing FR2 slice: stale new-first old=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                     (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                     (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+    return 0;
+  }
 
   /* Guard method-style calls seeded by MOV self (usually from reg 0) and
      function loaded from object field (TGETS base=0). Reusing existing FR2
@@ -2294,8 +2311,8 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
       return TOLUA_BCCONV_OK;
     }
   }
-  if ((consumer_op == BC_CALL && bc_c(consumer) > 2) ||
-      (consumer_op == BC_CALLT && bc_d(consumer) > 2)) {
+  if ((consumer_op == BC_CALL && bc_c(consumer) >= 2) ||
+      (consumer_op == BC_CALLT && bc_d(consumer) >= 2)) {
     BCReg old_first = 0;
     BCReg old_last = 0;
 

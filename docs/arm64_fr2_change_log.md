@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-22 11:05  
+最后更新：2026-03-22 11:35  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-22 | `待提交` | `RegisterWorkflowForSkills` 规则扩展：`CALL(C=6/C=4)` 的第二参数来源由 `TDUP` 扩展为 `TDUP|MOV`（root proto），覆盖 `AttackLogic.lua` 中 `KSTR+MOV+FNEW+...` 形态 | `AttackLogic.lua` 报 `RegisterWorkflowForSkills: attempt to concatenate a table value` | 离线反汇编已确认目标段 33 个调用点全部带搬移链（`fail=0`），待真机 |
 | 2026-03-22 | `待提交` | 新增 battle 定向门禁：校验 `RegisterWorkflowForSkills` 的 `CALL(C=6/C=4)` 调用点在 FR2 产物中均带正确 MOV 搬移链（防“脚本过、真机仍原错”） | battle `RegisterWorkflowForSkills` 旧错误反复 | 本地门禁通过（`hits=21`，`fail=0`） |
 | 2026-03-22 | `待提交` | 在 root proto(`pflags=0x03`) 补回 `CALL(C=4)` 的 `TGETS+KSTR+TDUP+FNEW` 强制 `copy-fallback` | battle `RegisterWorkflowForSkills` 仍报 concat table | 离线反汇编已确认 C4/C6 全部插入 MOV 链，待真机 |
 | 2026-03-22 | `待提交` | 收窄 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback`：仅在 root proto(`pflags=0x03`) 生效；避免函数体内大面积误命中 | battle `RegisterWorkflowForSkills` 拼接 table 报错 + 连锁副作用 | 离线通过；`battle copy_fallback_hits` 610→595，`rebuild_count` 4488→839，待真机 |
@@ -56,6 +57,7 @@
 
 | 日期 | 构建/Commit | 入口 | 首条报错指纹 | 归类 | 处理状态 |
 |---|---|---|---|---|---|
+| 2026-03-22 | `待提交` | `jygame/AttackLogic.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | call6 规则漏匹配 `MOV` 作为第二参数来源 | 已扩展 `TDUP|MOV` 并重编 so，待真机 |
 | 2026-03-22 | `待提交` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value`（仍复现） | call6 规则命中过宽（函数体链式调用被误改） | 已收窄到 root proto 并重编 so，待真机 |
 | 2026-03-22 | `cd134e7` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | 长链 `CALL(C=6)` 参数重排残留 | 已加 force copy-fallback，待真机 |
 | 2026-03-21 | `5a9ceaa` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | FR2 参数错位（KSTR+TDUP 邻位） | 本地反汇编已修，待真机 |

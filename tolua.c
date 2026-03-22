@@ -1732,7 +1732,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
         bc_a(prev4) == func_reg &&
         bc_op(prev3) == BC_KSTR &&
         bc_a(prev3) == old_first &&
-        bc_op(prev2) == BC_TDUP &&
+        (bc_op(prev2) == BC_TDUP || bc_op(prev2) == BC_MOV) &&
         bc_a(prev2) == (BCReg)(old_first + 1) &&
         bc_op(prev1) == BC_FNEW &&
         bc_a(prev1) == old_last) {
@@ -1794,13 +1794,13 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCReg func_reg = bc_a(consumer_ins);
 
     /* RegisterWorkflowForSkills-like call site:
-       TGETS func; KSTR; TDUP; FNEW; KSTR; KPRI; CALL(C=6).
+       TGETS func; KSTR; (TDUP|MOV); FNEW; KSTR; KPRI; CALL(C=6).
        Force copy-fallback to avoid residual arg aliasing in long repeated chains. */
     if (bc_op(prev6) == BC_TGETS &&
         bc_a(prev6) == func_reg &&
         bc_op(prev5) == BC_KSTR &&
         bc_a(prev5) == old_first &&
-        bc_op(prev4) == BC_TDUP &&
+        (bc_op(prev4) == BC_TDUP || bc_op(prev4) == BC_MOV) &&
         bc_a(prev4) == (BCReg)(old_first + 1) &&
         bc_op(prev3) == BC_FNEW &&
         bc_a(prev3) == (BCReg)(old_first + 2) &&

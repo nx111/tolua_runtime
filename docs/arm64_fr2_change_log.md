@@ -1,18 +1,19 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-22 11:35  
+最后更新：2026-03-22 14:05  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
 
 - 目标：在 `arm64` 上稳定加载 `arm32` LuaJIT bytecode。
 - 当前主线问题：
-1. `jygame/battle.lua`：`RegisterWorkflowForSkills` 仍报 `attempt to concatenate a table value`（已加针对性修复，待真机验证）。
+1. `jygame/battle.lua`：`tmp.lua:148 attempt to index field 'slevels' (a nil value)`（定位为 `CheckIfSkillUpgraded` 调用点参数错位）。
 
 ## 2. 变更记录（按时间倒序）
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-22 | `待提交` | 新增 `CALL(C=3)` 窄规则：命中 `func + MOV(arg1) + TGET*(arg2) + CALL` 形态时强制 `copy-fallback`，避免 existing-slice 误保留 FR1 参数布局 | `battle.lua tmp.lua:148 slevels=nil`（`CheckIfSkillUpgraded`） | 离线已验证 `proto132` 两个调用点新增 `MOV11<-10` 与 `MOV10<-9` 搬移链；门禁通过，待真机 |
 | 2026-03-22 | `待提交` | `RegisterWorkflowForSkills` 规则扩展：`CALL(C=6/C=4)` 的第二参数来源由 `TDUP` 扩展为 `TDUP|MOV`（root proto），覆盖 `AttackLogic.lua` 中 `KSTR+MOV+FNEW+...` 形态 | `AttackLogic.lua` 报 `RegisterWorkflowForSkills: attempt to concatenate a table value` | 离线反汇编已确认目标段 33 个调用点全部带搬移链（`fail=0`），待真机 |
 | 2026-03-22 | `待提交` | 新增 battle 定向门禁：校验 `RegisterWorkflowForSkills` 的 `CALL(C=6/C=4)` 调用点在 FR2 产物中均带正确 MOV 搬移链（防“脚本过、真机仍原错”） | battle `RegisterWorkflowForSkills` 旧错误反复 | 本地门禁通过（`hits=21`，`fail=0`） |
 | 2026-03-22 | `待提交` | 在 root proto(`pflags=0x03`) 补回 `CALL(C=4)` 的 `TGETS+KSTR+TDUP+FNEW` 强制 `copy-fallback` | battle `RegisterWorkflowForSkills` 仍报 concat table | 离线反汇编已确认 C4/C6 全部插入 MOV 链，待真机 |

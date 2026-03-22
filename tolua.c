@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall6";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall7";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1263,14 +1263,20 @@ static uint8_t *tolua_rebuild_chunk_with_insert_copy(const uint8_t *buf, size_t 
 
   before_len = target_proto_len_pos;
   after_len = len - target_proto_end;
-  tail_len = layout.debug_pos - layout.bc_end;
+  tail_len = layout.end - layout.bc_end;
   old_proto_payload = layout.end - layout.body_pos;
   old_proto_total = layout.len_field_size + old_proto_payload;
   new_header_len = 4 +
                    tolua_uleb128_size(layout.sizekgc) +
                    tolua_uleb128_size(layout.sizekn) +
-                   tolua_uleb128_size(layout.numbc + insert_count) +
-                   (strip ? 0 : tolua_uleb128_size(0));
+                   tolua_uleb128_size(layout.numbc + insert_count);
+  if (!strip) {
+    new_header_len += tolua_uleb128_size(layout.sizedbg);
+    if (layout.sizedbg) {
+      new_header_len += tolua_uleb128_size(layout.firstline);
+      new_header_len += tolua_uleb128_size(layout.numline);
+    }
+  }
   new_proto_payload = new_header_len + ((size_t)layout.numbc + insert_count) * 4 + tail_len;
   new_proto_total = tolua_uleb128_size((uint32_t)new_proto_payload) + new_proto_payload;
   if (new_proto_total >= old_proto_total) {
@@ -1305,7 +1311,13 @@ static uint8_t *tolua_rebuild_chunk_with_insert_copy(const uint8_t *buf, size_t 
   dst = tolua_write_uleb128(dst, layout.sizekgc);
   dst = tolua_write_uleb128(dst, layout.sizekn);
   dst = tolua_write_uleb128(dst, layout.numbc + insert_count);
-  if (!strip) dst = tolua_write_uleb128(dst, 0);
+  if (!strip) {
+    dst = tolua_write_uleb128(dst, layout.sizedbg);
+    if (layout.sizedbg) {
+      dst = tolua_write_uleb128(dst, layout.firstline);
+      dst = tolua_write_uleb128(dst, layout.numline);
+    }
+  }
 
   {
     BCIns *new_bc = NULL;
@@ -1780,6 +1792,60 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
         (prev4_op == BC_GGET || prev4_op == BC_UGET ||
          prev4_op == BC_TGETS || prev4_op == BC_TGETV || prev4_op == BC_TGETB)) {
       allow_existing_slice = 0;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 && pc >= 4) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
+    BCOp prev4_op = bc_op(prev4);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* Guard two-arg chains prepared as:
+       table/global func load; MOV arg1; table lookup chain for arg2; CALL.
+       Existing FR2 slice reuse can keep arg1 in A+1 (FR1 layout), which makes
+       the callee see nil/stale arg1 on FR2. Force copy-fallback for stability. */
+    if ((prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB) &&
+        bc_a(prev1) == old_last &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+         prev2_op == BC_UGET || prev2_op == BC_GGET) &&
+        bc_a(prev2) == old_last &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev3) == old_first &&
+        bc_d(prev3) != old_last &&
+        bc_a(prev4) == func_reg &&
+        (prev4_op == BC_GGET || prev4_op == BC_UGET ||
+         prev4_op == BC_TGETS || prev4_op == BC_TGETV || prev4_op == BC_TGETB)) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
+    }
+  }
+  /* Guard for 3-arg calls in root chunks with specific pattern:
+     TGETS func; (KSTR|MOV) arg1; TGET* arg2; CALL(C=3).
+     This pattern appears in Battle callback registration and needs force-copy-fallback
+     to prevent arg1 being incorrectly mapped to function register. */
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      ctx != NULL && ctx->proto_flags == 0x03 &&
+      old_last == (BCReg)(old_first + 2) && pc >= 3) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
+    BCOp prev3_op = bc_op(prev3);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    if (prev3_op == BC_TGETS &&
+        bc_a(prev3) == func_reg &&
+        (prev2_op == BC_KSTR || prev2_op == BC_MOV) &&
+        bc_a(prev2) == old_first &&
+        (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB) &&
+        bc_a(prev1) == (BCReg)(old_first + 1)) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
     }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 6 &&

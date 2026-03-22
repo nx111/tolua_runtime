@@ -1716,6 +1716,30 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       allow_existing_slice = 0;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 4 &&
+      ctx != NULL && ctx->proto_flags == 0x03 &&
+      old_last == (BCReg)(old_first + 2) && pc >= 4) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* Root-chunk RegisterWorkflowForSkills-like 3-arg call site:
+       TGETS func; KSTR; TDUP; FNEW; CALL(C=4).
+       Force copy-fallback here to keep arg1/arg2/arg3 ordering stable on FR2. */
+    if (bc_op(prev4) == BC_TGETS &&
+        bc_a(prev4) == func_reg &&
+        bc_op(prev3) == BC_KSTR &&
+        bc_a(prev3) == old_first &&
+        bc_op(prev2) == BC_TDUP &&
+        bc_a(prev2) == (BCReg)(old_first + 1) &&
+        bc_op(prev1) == BC_FNEW &&
+        bc_a(prev1) == old_last) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
+    }
+  }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 && pc >= 2) {
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);

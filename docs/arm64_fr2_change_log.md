@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-22 10:40  
+最后更新：2026-03-22 11:05  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,8 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-22 | `待提交` | 新增 battle 定向门禁：校验 `RegisterWorkflowForSkills` 的 `CALL(C=6/C=4)` 调用点在 FR2 产物中均带正确 MOV 搬移链（防“脚本过、真机仍原错”） | battle `RegisterWorkflowForSkills` 旧错误反复 | 本地门禁通过（`hits=21`，`fail=0`） |
+| 2026-03-22 | `待提交` | 在 root proto(`pflags=0x03`) 补回 `CALL(C=4)` 的 `TGETS+KSTR+TDUP+FNEW` 强制 `copy-fallback` | battle `RegisterWorkflowForSkills` 仍报 concat table | 离线反汇编已确认 C4/C6 全部插入 MOV 链，待真机 |
 | 2026-03-22 | `待提交` | 收窄 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback`：仅在 root proto(`pflags=0x03`) 生效；避免函数体内大面积误命中 | battle `RegisterWorkflowForSkills` 拼接 table 报错 + 连锁副作用 | 离线通过；`battle copy_fallback_hits` 610→595，`rebuild_count` 4488→839，待真机 |
 | 2026-03-22 | `待提交` | 在 `tolua_loadbuffer` 增加构建签名日志：`build=arm64fr2-20260322-rootcall6`，并对 `main/battle/migong` 打印 `conv_ok/conv_fail` | 真机无法确认是否加载最新 so | 已输出可观测标记，待真机回传日志 |
 | 2026-03-22 | `cd134e7` | 新增 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback` 路径，规避 `RegisterWorkflowForSkills` 长链调用残留错位 | battle `RegisterWorkflowForSkills` 拼接 table 报错 | 离线转换通过，待真机 |
@@ -34,7 +36,7 @@
 | `migong.lua` | `split` 中 `table.insert` | 第1参数应为 table | 通过（旧问题已修） |
 | `migong.lua` | `PatchMigong` 内 `table.insert` | 第1参数应为 table | 本地反汇编通过（`MOV 8/9`），待真机 |
 | `battle.lua` | `CheckIfEquipNotRight` 调用 | 参数顺序正确 | 通过（已修） |
-| `battle.lua` | `RegisterWorkflowForSkills` | 字符串拼接参与者应为 string | 已将 call6 强制 copy-fallback 收窄到 root proto，待真机 |
+| `battle.lua` | `RegisterWorkflowForSkills` | 字符串拼接参与者应为 string | 已对 root proto 的 C6/C4 调用统一加搬移链，并加定向门禁，待真机 |
 
 ## 4. 操作约束（避免“拆东墙补西墙”）
 
@@ -64,8 +66,9 @@
 1. 执行：`powershell -ExecutionPolicy Bypass -File .\tools\check_arm64_fr2_log.ps1`。  
 2. 执行：`powershell -ExecutionPolicy Bypass -File .\tools\run_arm64_offline_regression.ps1`。  
 3. 若输出失败，先补日志或修规则再提交，不允许跳过。  
-4. 每条“代码规则变更”必须带三项证据：命中形态、离线日志指纹、真机结论。  
-5. 真机出现新错误时，只记录首条报错指纹，不做“批量猜测式修复”。  
+4、 必须确保已报告的错误被解决或减少，不允许没有实际进步提交真机测试。
+5. 每条“代码规则变更”必须带三项证据：命中形态、离线日志指纹、真机结论。  
+6. 真机出现新错误时，只记录首条报错指纹，不做“批量猜测式修复”。  
 
 ## 8. 记录模板（复制一行到第 2 节）
 

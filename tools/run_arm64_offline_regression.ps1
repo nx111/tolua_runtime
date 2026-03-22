@@ -29,6 +29,90 @@ function Get-LogCount([string]$logPath, [string]$pattern) {
     return @($matches).Count
 }
 
+function Test-BattleWorkflowArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 202 0 1600 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            hits = 0
+            failures = @("bc_dump_proto_wsl failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $hits = 0
+    $fails = New-Object System.Collections.Generic.List[string]
+
+    foreach ($r in $rows.Values | Sort-Object pc) {
+        if ($r.op -ne "CALL" -or $r.a -ne 29 -or ($r.c -ne 4 -and $r.c -ne 6)) {
+            continue
+        }
+
+        $shapeFound = $false
+        for ($back = 1; $back -le 12; $back++) {
+            $fpc = $r.pc - $back
+            if (-not $rows.ContainsKey($fpc) -or -not $rows.ContainsKey($fpc - 1) -or -not $rows.ContainsKey($fpc - 2) -or -not $rows.ContainsKey($fpc - 3)) {
+                continue
+            }
+            $fnew = $rows[$fpc]
+            $tdup = $rows[$fpc - 1]
+            $kstr = $rows[$fpc - 2]
+            $tgets = $rows[$fpc - 3]
+            if ($fnew.op -eq "FNEW" -and $fnew.a -eq 32 -and
+                $tdup.op -eq "TDUP" -and $tdup.a -eq 31 -and
+                $kstr.op -eq "KSTR" -and $kstr.a -eq 30 -and
+                $tgets.op -eq "TGETS" -and $tgets.a -eq 29) {
+                $shapeFound = $true
+                break
+            }
+        }
+
+        if (-not $shapeFound) { continue }
+        $hits++
+
+        $expectedMov = $r.c - 1
+        for ($n = 1; $n -le $expectedMov; $n++) {
+            $mpc = $r.pc - $n
+            if (-not $rows.ContainsKey($mpc)) {
+                $fails.Add("pc=$($r.pc) c=$($r.c) missing-mov n=$n")
+                break
+            }
+            $m = $rows[$mpc]
+            $expectA = 30 + $n
+            $expectD = 29 + $n
+            if ($m.op -ne "MOV" -or $m.a -ne $expectA -or $m.d -ne $expectD) {
+                $fails.Add("pc=$($r.pc) c=$($r.c) bad-mov n=$n got=$($m.op) A=$($m.a) D=$($m.d)")
+                break
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($hits -ge 5 -and $fails.Count -eq 0)
+        hits = $hits
+        failures = @($fails)
+    }
+}
+
 $repoRoot = (Resolve-Path ".").Path
 $repoRootWsl = Convert-ToWslPath $repoRoot
 
@@ -79,11 +163,23 @@ foreach ($name in $targets) {
     $kstrTdup = Get-LogCount $logPath "reject existing FR2 slice: KSTR\+TDUP"
     $tableStyle = Get-LogCount $logPath "GGET/TGET\* func; TGET\* method; MOV arg1; MOV arg2; CALL"
     $copyFallback = Get-LogCount $logPath "copy-fallback"
+    $workflowShiftHits = 0
+    $workflowShiftFailures = 0
+
+    if ($name -eq "battle.lua") {
+        $disPath = Join-Path $outAbs "battle.proto202.dis.txt"
+        $workflowCheck = Test-BattleWorkflowArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $disPath
+        $workflowShiftHits = $workflowCheck.hits
+        $workflowShiftFailures = @($workflowCheck.failures).Count
+        if (-not $workflowCheck.ok) {
+            $failed = $true
+            foreach ($msg in $workflowCheck.failures | Select-Object -First 20) {
+                Write-Warning "[battle workflow-shift] $msg"
+            }
+        }
+    }
 
     if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
-        $failed = $true
-    }
-    if ($name -eq "battle.lua" -and $kstrTdup -lt 1) {
         $failed = $true
     }
 
@@ -96,6 +192,8 @@ foreach ($name in $targets) {
         kstr_tdup_rejects   = $kstrTdup
         table_style_guards  = $tableStyle
         copy_fallback_hits  = $copyFallback
+        workflow_shift_hits = $workflowShiftHits
+        workflow_shift_fail = $workflowShiftFailures
         log_path            = $logPath
         out_path            = $outPath
     }
@@ -116,14 +214,16 @@ elseif (Test-Path $baselinePath) {
             $failed = $true
             continue
         }
-        if ($row.kstr_tdup_rejects -ne $baseRow.kstr_tdup_rejects -and $row.file -eq "battle.lua") {
-            $failed = $true
-        }
         if ($row.conversion_failed -ne $baseRow.conversion_failed) {
             $failed = $true
         }
         if ($row.register_overflow -ne $baseRow.register_overflow) {
             $failed = $true
+        }
+        if ($row.file -eq "battle.lua") {
+            if ($row.workflow_shift_fail -ne 0 -or $row.workflow_shift_hits -lt 5) {
+                $failed = $true
+            }
         }
     }
 }

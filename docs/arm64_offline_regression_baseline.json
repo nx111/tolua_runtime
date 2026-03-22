@@ -17,9 +17,9 @@
         "converted_lines":  1,
         "conversion_failed":  0,
         "register_overflow":  0,
-        "kstr_tdup_rejects":  21,
+        "kstr_tdup_rejects":  5,
         "table_style_guards":  0,
-        "copy_fallback_hits":  224,
+        "copy_fallback_hits":  240,
         "log_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\battle.lua.dbg.log",
         "out_path":  "D:\\Games\\work\\tolua_runtime\\tmp\\offline_regression\\battle.lua.fr2.bin"
     },

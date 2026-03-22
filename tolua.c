@@ -1645,6 +1645,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
   BCOp interference_op = BC__MAX;
   BCReg interference_reg = 0;
   int status = TOLUA_BCCONV_OK;
+  int force_copy_fallback = 0;
   int scan = 0;
 
   if (old_first > old_last) return TOLUA_BCCONV_OK;
@@ -1735,6 +1736,35 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       allow_existing_slice = 0;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 6 &&
+      old_last == (BCReg)(old_first + 4) && pc >= 6) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCIns prev5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+    BCIns prev6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 6) * 4, be);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* RegisterWorkflowForSkills-like call site:
+       TGETS func; KSTR; TDUP; FNEW; KSTR; KPRI; CALL(C=6).
+       Force copy-fallback to avoid residual arg aliasing in long repeated chains. */
+    if (bc_op(prev6) == BC_TGETS &&
+        bc_a(prev6) == func_reg &&
+        bc_op(prev5) == BC_KSTR &&
+        bc_a(prev5) == old_first &&
+        bc_op(prev4) == BC_TDUP &&
+        bc_a(prev4) == (BCReg)(old_first + 1) &&
+        bc_op(prev3) == BC_FNEW &&
+        bc_a(prev3) == (BCReg)(old_first + 2) &&
+        bc_op(prev2) == BC_KSTR &&
+        bc_a(prev2) == (BCReg)(old_first + 3) &&
+        bc_op(prev1) == BC_KPRI &&
+        bc_a(prev1) == old_last) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
+    }
+  }
   if (new_last > BCMAX_A) {
     return tolua_failbytecodeproto(ctx, pc,
                                    (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
@@ -1753,6 +1783,27 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                                  framesize_io, targets, ctx, &handled);
     if (status != TOLUA_BCCONV_OK) return status;
     if (handled) return TOLUA_BCCONV_OK;
+  }
+  if (force_copy_fallback) {
+    int handled = 0;
+
+    status = tolua_try_insert_copy_fallback_for_fr2(buf, bc_pos, numbc, be, pc,
+                                                    old_first, old_last, new_first, new_last,
+                                                    framesize_io, targets, ctx,
+                                                    "call6-kstr-tdup-fnew-chain", &handled);
+    if (status == TOLUA_BCCONV_INTERNAL_INSERT_COPY) return status;
+    if (status != TOLUA_BCCONV_OK) return status;
+    if (handled) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "force copy-fallback handled old=[%u,%u] new=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last);
+      return TOLUA_BCCONV_OK;
+    }
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "force copy-fallback unavailable, continue slice remap old=[%u,%u] new=[%u,%u]",
+                     (unsigned int)old_first, (unsigned int)old_last,
+                     (unsigned int)new_first, (unsigned int)new_last);
   }
 
   selected = (uint8_t *)calloc((size_t)numbc, 1);

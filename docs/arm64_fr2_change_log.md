@@ -13,8 +13,8 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
-| 2026-03-22 | `待提交` | 新增 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback` 路径，规避 `RegisterWorkflowForSkills` 长链调用残留错位 | battle `RegisterWorkflowForSkills` 拼接 table 报错 | 离线转换通过，待真机 |
-| 2026-03-22 | `待提交` | 更新 `docs/arm64_offline_regression_baseline.json`（battle 指纹变更：`kstr_tdup_rejects=5`、`copy_fallback_hits=240`） | 离线门禁跟随新策略 | 本地门禁已通过 |
+| 2026-03-22 | `cd134e7` | 新增 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback` 路径，规避 `RegisterWorkflowForSkills` 长链调用残留错位 | battle `RegisterWorkflowForSkills` 拼接 table 报错 | 离线转换通过，待真机 |
+| 2026-03-22 | `cd134e7` | 更新 `docs/arm64_offline_regression_baseline.json`（battle 指纹变更：`kstr_tdup_rejects=5`、`copy_fallback_hits=240`） | 离线门禁跟随新策略 | 本地门禁已通过 |
 | 2026-03-21 | `9aa9e73` | 新增 `tools/run_arm64_offline_regression.ps1` + `docs/arm64_offline_regression_baseline.json`，实现离线门禁（重编调试转换器、批量转换 main/battle/migong、日志指纹比对） | 降低每次改动都上真机的频率 | 本地脚本已跑通，可用于自主回归 |
 | 2026-03-21 | `5a9ceaa` | 新增 `tools/check_arm64_fr2_log.ps1`，强制校验 `tolua.c/arm64 so` 改动必须同步更新日志 | 防止“改代码不记账”导致循环回归 | 已启用，本地检查通过 |
 | 2026-03-21 | `5a9ceaa` | 新增两条窄规则：`MOV+MOV+TGET*+CALL(C=3)` 的 table-style 两参调用防错位；`KSTR+TDUP` 识别 `new_first` 误绑 `old_second` | `PatchMigong insert` 与 `RegisterWorkflowForSkills` 参数错位 | 本地反汇编已验证目标点修正，待真机 |
@@ -52,7 +52,7 @@
 
 | 日期 | 构建/Commit | 入口 | 首条报错指纹 | 归类 | 处理状态 |
 |---|---|---|---|---|---|
-| 2026-03-22 | `待提交` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | 长链 `CALL(C=6)` 参数重排残留 | 已加 force copy-fallback，待真机 |
+| 2026-03-22 | `cd134e7` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | 长链 `CALL(C=6)` 参数重排残留 | 已加 force copy-fallback，待真机 |
 | 2026-03-21 | `5a9ceaa` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | FR2 参数错位（KSTR+TDUP 邻位） | 本地反汇编已修，待真机 |
 | 2026-03-21 | `5a9ceaa` | `jygame/migong.lua` | `PatchMigong: bad argument #1 to 'insert' (table expected, got string)` | table-style 两参调用错位 | 本地反汇编已修，待真机 |
 

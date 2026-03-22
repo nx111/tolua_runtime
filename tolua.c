@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall7";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall8";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1844,6 +1844,29 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
         bc_a(prev2) == old_first &&
         (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB) &&
         bc_a(prev1) == (BCReg)(old_first + 1)) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
+    }
+  }
+  /* Guard for all 3-arg calls in root chunks where func is loaded from table.
+     This is a more general rule to catch patterns not covered above. */
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      ctx != NULL && ctx->proto_flags == 0x03 &&
+      old_last == (BCReg)(old_first + 2) && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* Detect: any table/global func load; (KSTR|MOV) arg1; (TGET*|MOV) arg2; CALL(C=3)
+       Force copy-fallback to ensure correct arg ordering on FR2. */
+    if ((prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+         prev2_op == BC_GGET || prev2_op == BC_UGET) &&
+        bc_a(prev2) == func_reg &&
+        (prev1_op == BC_KSTR || prev1_op == BC_MOV ||
+         prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB) &&
+        bc_a(prev1) == old_first) {
       allow_existing_slice = 0;
       force_copy_fallback = 1;
     }

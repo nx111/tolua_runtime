@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall8";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-c4guard";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1871,6 +1871,38 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       force_copy_fallback = 1;
     }
   }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 6 &&
+      ctx != NULL && ctx->proto_flags == 0x03 &&
+      old_last == (BCReg)(old_first + 4) && pc >= 6) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCIns prev5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+    BCIns prev6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 6) * 4, be);
+    BCReg func_reg = bc_a(consumer_ins);
+
+    /* RegisterWorkflowForSkills-like call site:
+       TGETS func; KSTR; (TDUP|MOV); FNEW; KSTR; KPRI; CALL(C=6).
+       Force copy-fallback to avoid residual arg aliasing in long repeated chains. */
+    if (bc_op(prev6) == BC_TGETS &&
+        bc_a(prev6) == func_reg &&
+        bc_op(prev5) == BC_KSTR &&
+        bc_a(prev5) == old_first &&
+        (bc_op(prev4) == BC_TDUP || bc_op(prev4) == BC_MOV) &&
+        bc_a(prev4) == (BCReg)(old_first + 1) &&
+        bc_op(prev3) == BC_FNEW &&
+        bc_a(prev3) == (BCReg)(old_first + 2) &&
+        bc_op(prev2) == BC_KSTR &&
+        bc_a(prev2) == (BCReg)(old_first + 3) &&
+        bc_op(prev1) == BC_KPRI &&
+        bc_a(prev1) == old_last) {
+      allow_existing_slice = 0;
+      force_copy_fallback = 1;
+    }
+  }
+  /* Guard for 6-arg calls (C=6) in root chunks - prevent arg aliasing in long chains.
+     This is a more conservative fix, only for known problematic patterns. */
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 6 &&
       ctx != NULL && ctx->proto_flags == 0x03 &&
       old_last == (BCReg)(old_first + 4) && pc >= 6) {

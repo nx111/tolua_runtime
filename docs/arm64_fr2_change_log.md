@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-22 08:10  
+最后更新：2026-03-22 10:40  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,8 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-22 | `待提交` | 收窄 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback`：仅在 root proto(`pflags=0x03`) 生效；避免函数体内大面积误命中 | battle `RegisterWorkflowForSkills` 拼接 table 报错 + 连锁副作用 | 离线通过；`battle copy_fallback_hits` 610→595，`rebuild_count` 4488→839，待真机 |
+| 2026-03-22 | `待提交` | 在 `tolua_loadbuffer` 增加构建签名日志：`build=arm64fr2-20260322-rootcall6`，并对 `main/battle/migong` 打印 `conv_ok/conv_fail` | 真机无法确认是否加载最新 so | 已输出可观测标记，待真机回传日志 |
 | 2026-03-22 | `cd134e7` | 新增 `CALL(C=6)` 的 `KSTR+TDUP+FNEW+KSTR+KPRI` 强制 `copy-fallback` 路径，规避 `RegisterWorkflowForSkills` 长链调用残留错位 | battle `RegisterWorkflowForSkills` 拼接 table 报错 | 离线转换通过，待真机 |
 | 2026-03-22 | `cd134e7` | 更新 `docs/arm64_offline_regression_baseline.json`（battle 指纹变更：`kstr_tdup_rejects=5`、`copy_fallback_hits=240`） | 离线门禁跟随新策略 | 本地门禁已通过 |
 | 2026-03-21 | `9aa9e73` | 新增 `tools/run_arm64_offline_regression.ps1` + `docs/arm64_offline_regression_baseline.json`，实现离线门禁（重编调试转换器、批量转换 main/battle/migong、日志指纹比对） | 降低每次改动都上真机的频率 | 本地脚本已跑通，可用于自主回归 |
@@ -32,7 +34,7 @@
 | `migong.lua` | `split` 中 `table.insert` | 第1参数应为 table | 通过（旧问题已修） |
 | `migong.lua` | `PatchMigong` 内 `table.insert` | 第1参数应为 table | 本地反汇编通过（`MOV 8/9`），待真机 |
 | `battle.lua` | `CheckIfEquipNotRight` 调用 | 参数顺序正确 | 通过（已修） |
-| `battle.lua` | `RegisterWorkflowForSkills` | 字符串拼接参与者应为 string | 已改为强制 copy-fallback，待真机 |
+| `battle.lua` | `RegisterWorkflowForSkills` | 字符串拼接参与者应为 string | 已将 call6 强制 copy-fallback 收窄到 root proto，待真机 |
 
 ## 4. 操作约束（避免“拆东墙补西墙”）
 
@@ -52,6 +54,7 @@
 
 | 日期 | 构建/Commit | 入口 | 首条报错指纹 | 归类 | 处理状态 |
 |---|---|---|---|---|---|
+| 2026-03-22 | `待提交` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value`（仍复现） | call6 规则命中过宽（函数体链式调用被误改） | 已收窄到 root proto 并重编 so，待真机 |
 | 2026-03-22 | `cd134e7` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | 长链 `CALL(C=6)` 参数重排残留 | 已加 force copy-fallback，待真机 |
 | 2026-03-21 | `5a9ceaa` | `jygame/battle.lua` | `RegisterWorkflowForSkills: attempt to concatenate a table value` | FR2 参数错位（KSTR+TDUP 邻位） | 本地反汇编已修，待真机 |
 | 2026-03-21 | `5a9ceaa` | `jygame/migong.lua` | `PatchMigong: bad argument #1 to 'insert' (table expected, got string)` | table-style 两参调用错位 | 本地反汇编已修，待真机 |

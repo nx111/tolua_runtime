@@ -56,6 +56,27 @@ static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
+static int tolua_bytecode_build_logged = 0;
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-rootcall6";
+
+static void tolua_emitlogv(const char *fmt, va_list argp)
+{
+	char buffer[1024];
+	vsnprintf(buffer, sizeof(buffer), fmt, argp);
+#ifdef _WIN32
+	OutputDebugStringA(buffer);
+	OutputDebugStringA("\n");
+#endif
+	fprintf(stderr, "%s\n", buffer);
+}
+
+static void tolua_emitlog(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	tolua_emitlogv(fmt, argp);
+	va_end(argp);
+}
 
 static void tolua_setbytecodedebugv(const char *fmt, va_list argp)
 {
@@ -375,6 +396,7 @@ typedef struct tolua_bcdebug_ctx {
   const char *chunk_name;
   size_t chunk_name_len;
   uint32_t proto_index;
+  uint8_t proto_flags;
 } tolua_bcdebug_ctx;
 
 #define TOLUA_BCCONV_INTERNAL_INSERT_COPY 1001
@@ -1737,6 +1759,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 6 &&
+      ctx != NULL && ctx->proto_flags == 0x03 &&
       old_last == (BCReg)(old_first + 4) && pc >= 6) {
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
@@ -8613,6 +8636,7 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
       ctx.chunk_name = (!strip && chunk_name_len != 0) ? (const char *)(buf + chunk_name_pos) : NULL;
       ctx.chunk_name_len = chunk_name_len;
       ctx.proto_index = proto_index;
+      ctx.proto_flags = 0;
 
       if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) {
         return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
@@ -8633,6 +8657,7 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
         return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
                                   "proto %u header is truncated", (unsigned int)proto_index);
       }
+      ctx.proto_flags = buf[p];
       framesize_pos = p + 2;
       p += 4;
 
@@ -8753,6 +8778,7 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
     ctx.chunk_name = (!strip && chunk_name_len != 0) ? (const char *)(buf + chunk_name_pos) : NULL;
     ctx.chunk_name_len = chunk_name_len;
     ctx.proto_index = proto_index;
+    ctx.proto_flags = 0;
 
     if (!tolua_read_uleb128(buf, len, &pos, &proto_len)) {
       return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
@@ -8773,6 +8799,7 @@ static int tolua_convert_bytecode_inplace(uint8_t **buf_io, size_t *len_io, int 
       return tolua_failbytecode(TOLUA_BCCONV_ERR_MALFORMED_CHUNK,
                                 "proto %u header is truncated", (unsigned int)proto_index);
     }
+    ctx.proto_flags = buf[p];
     framesize_pos = p + 2;
     p += 4; /* pflags, params, framesize, uv */
 
@@ -8961,24 +8988,45 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
         (uint8_t)buff[0] == TOLUA_BCDUMP_HEAD1 &&
         (uint8_t)buff[1] == TOLUA_BCDUMP_HEAD2 &&
         (uint8_t)buff[2] == TOLUA_BCDUMP_HEAD3) {
+      int target_fr2 = LJ_FR2 ? 1 : 0;
       int conv_status = TOLUA_BCCONV_OK;
       int patched_sz = 0;
       const char *orig_error = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
-      char *patched = tolua_convertbytecodeex(buff, sz, LJ_FR2 ? 1 : 0, &patched_sz, &conv_status);
+      int trace_chunk = (name != NULL) &&
+                        (strstr(name, "battle.lua") != NULL ||
+                         strstr(name, "main.lua") != NULL ||
+                         strstr(name, "migong.lua") != NULL);
+      char *patched = NULL;
+
+      if (!tolua_bytecode_build_logged) {
+        tolua_emitlog("[tolua-bytecode] build=%s runtime_fr2=%d", tolua_bytecode_build_tag, target_fr2);
+        tolua_bytecode_build_logged = 1;
+      }
+      patched = tolua_convertbytecodeex(buff, sz, target_fr2, &patched_sz, &conv_status);
       if (patched != NULL) {
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
+        if (trace_chunk) {
+          tolua_emitlog("[tolua-bytecode] build=%s conv_ok name=%s src=%d out=%d",
+                        tolua_bytecode_build_tag, name != NULL ? name : "<null>", sz, patched_sz);
+        }
         free(patched);
       } else {
         const char *conv_detail = tolua_getlastbytecodedebug();
         const char *conv_name = tolua_getbytecodeerrorstr(conv_status);
+        if (trace_chunk) {
+          tolua_emitlog("[tolua-bytecode] build=%s conv_fail name=%s err=%s detail=%s",
+                        tolua_bytecode_build_tag, name != NULL ? name : "<null>",
+                        conv_name != NULL ? conv_name : "unknown",
+                        (conv_detail != NULL && conv_detail[0] != '\0') ? conv_detail : "conversion failed");
+        }
         if ((conv_detail != NULL && conv_detail[0] != '\0') || conv_status != TOLUA_BCCONV_OK) {
           const char *detail = (conv_detail != NULL && conv_detail[0] != '\0') ? conv_detail : "conversion failed";
-          const char *name = (conv_name != NULL && conv_name[0] != '\0') ? conv_name : "unknown";
+          const char *err_name = (conv_name != NULL && conv_name[0] != '\0') ? conv_name : "unknown";
           if (orig_error != NULL && orig_error[0] != '\0') {
-            lua_pushfstring(L, "%s\n[tolua-bytecode] %s (%s)", orig_error, detail, name);
+            lua_pushfstring(L, "%s\n[tolua-bytecode] %s (%s)", orig_error, detail, err_name);
           } else {
-            lua_pushfstring(L, "[tolua-bytecode] %s (%s)", detail, name);
+            lua_pushfstring(L, "[tolua-bytecode] %s (%s)", detail, err_name);
           }
           if (lua_gettop(L) >= 2) {
             lua_replace(L, -2); /* Replace original syntax error with richer context. */

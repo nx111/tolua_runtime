@@ -1607,6 +1607,12 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
                                                    uint8_t *framesize_io, const uint8_t *targets,
                                                    const tolua_bcdebug_ctx *ctx,
                                                    const char *reason, int *handled);
+static int tolua_try_repack_cat_split_hole(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                           uint32_t pc, BCIns cat, BCReg hole_reg,
+                                           BCReg old_first, BCReg old_last,
+                                           uint8_t *framesize_io, const uint8_t *targets,
+                                           const tolua_bcshift_map *map,
+                                           const tolua_bcdebug_ctx *ctx, int *changed);
 static int tolua_try_fix_call_intermediate_producer_chain_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                                                    uint32_t pc, uint8_t *framesize_io,
                                                                    const uint8_t *targets,
@@ -7757,7 +7763,9 @@ static int tolua_try_repack_cat_gap_copy(uint8_t *buf, size_t bc_pos, uint32_t n
     }
   }
 
-  return TOLUA_BCCONV_OK;
+  return tolua_try_repack_cat_split_hole(buf, bc_pos, numbc, be, pc, cat, hole_reg,
+                                         old_first, old_last, framesize_io, targets,
+                                         map, ctx, changed);
 
 found_cat_gap_copy_base:
 
@@ -7785,8 +7793,91 @@ found_cat_gap_copy_base:
                    (unsigned int)old_first, (unsigned int)old_last,
                    (unsigned int)hole_reg,
                    (unsigned int)new_base, (unsigned int)new_last,
-                   (unsigned int)pc,
-                   (unsigned int)copy_count);
+                    (unsigned int)pc,
+                    (unsigned int)copy_count);
+  return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
+}
+
+static int tolua_try_repack_cat_split_hole(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                           uint32_t pc, BCIns cat, BCReg hole_reg,
+                                           BCReg old_first, BCReg old_last,
+                                           uint8_t *framesize_io, const uint8_t *targets,
+                                           const tolua_bcshift_map *map,
+                                           const tolua_bcdebug_ctx *ctx, int *changed)
+{
+  BCReg part1_first = old_first;
+  BCReg part1_last = hole_reg - 1;
+  BCReg part2_first = hole_reg + 1;
+  BCReg part2_last = old_last;
+  int part1_count = part1_last >= part1_first ? (int)(part1_last - part1_first + 1) : 0;
+  int part2_count = part2_last >= part2_first ? (int)(part2_last - part2_first + 1) : 0;
+  BCReg copy_dst[TOLUA_MAX_INSERT_COPIES];
+  BCReg copy_src[TOLUA_MAX_INSERT_COPIES];
+  int cand_base = -1;
+  int hole, live_conflict;
+  BCReg live_reg;
+  int p;
+  int status;
+  int total_count = part1_count + part2_count;
+
+  *changed = 0;
+  if (total_count <= 0) return TOLUA_BCCONV_OK;
+  if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
+
+  for (p = 0; p < 2; p++) {
+    unsigned int start = p == 0 ? 0u : (unsigned int)*framesize_io;
+
+    for (cand_base = (int)start; cand_base <= BCMAX_A; cand_base++) {
+      int cand_last = cand_base + total_count - 1;
+      if (cand_last > BCMAX_A) break;
+      if (p == 0 && cand_last >= (unsigned int)*framesize_io) break;
+
+      if (tolua_find_closed_range_hole(map, cand_base, cand_last, &hole)) continue;
+
+      live_conflict = 0;
+      if (p == 0) {
+        for (live_reg = (BCReg)cand_base; live_reg <= (BCReg)cand_last; live_reg++) {
+          if (tolua_reg_live_after_pc(buf, bc_pos, numbc, be, pc + 1, live_reg)) {
+            live_conflict = 1;
+            break;
+          }
+        }
+        if (live_conflict) continue;
+      }
+      break;
+    }
+    if (cand_base >= 0 && cand_base + total_count - 1 <= BCMAX_A) break;
+  }
+
+  if (cand_base < 0 || cand_base + total_count - 1 > BCMAX_A) return TOLUA_BCCONV_OK;
+
+  for (p = 0; p < part1_count; p++) {
+    copy_dst[p] = (BCReg)(cand_base + p);
+    copy_src[p] = (BCReg)(part1_first + p);
+  }
+  for (p = 0; p < part2_count; p++) {
+    copy_dst[part1_count + p] = (BCReg)(cand_base + part1_count + p);
+    copy_src[part1_count + p] = (BCReg)(part2_first + p);
+  }
+
+  if (!tolua_schedule_insert_copies(ctx, pc, pc, copy_dst, copy_src, (uint8_t)total_count)) {
+    return TOLUA_BCCONV_OK;
+  }
+
+  setbc_b(&cat, (BCReg)cand_base);
+  setbc_c(&cat, (BCReg)(cand_base + total_count - 1));
+  tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)cat, be);
+
+  status = tolua_update_framesize_checked(framesize_io, (BCReg)(cand_base + total_count - 1), ctx, pc, cat, BC_CAT);
+  if (status != TOLUA_BCCONV_OK) {
+    return status;
+  }
+
+  *changed = 1;
+  TOLUA_REPACK_LOG(ctx, pc,
+                   "cat split-hole success old=[%u,%u] hole=%u new_base=%u total=%d part1=%d part2=%d",
+                   (unsigned int)old_first, (unsigned int)old_last,
+                    (unsigned int)hole_reg, (unsigned int)cand_base, total_count, part1_count, part2_count);
   return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
 }
 

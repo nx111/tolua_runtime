@@ -1,18 +1,19 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-22 14:05  
+最后更新：2026-03-26 16:25  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
 
 - 目标：在 `arm64` 上稳定加载 `arm32` LuaJIT bytecode。
 - 当前主线问题：
-1. `jygame/battle.lua`：`tmp.lua:148 attempt to index field 'slevels' (a nil value)`（定位为 `CheckIfSkillUpgraded` 调用点参数错位）。
+1. `jygame/battle.lua`：`tmp.lua:2556 field or property Equipment does not exist`、`tmp.lua:2571 invalid arguments to method GetEquipment`（定位为 `CALL(C=2/3/4)` 在 FR2 下参数窗口右移导致 self/arg 错位）。
 
 ## 2. 变更记录（按时间倒序）
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-26 | `待提交` | 新增 4 条窄规则：`method-self CALL(C=3)`、`direct CALL(C=2)`、`direct CALL(C=3)`、`CALL(C=4,B=1) param-pass` 均跳过 FR2 参数右移，避免 `MOV` 链被整体 +1 后与 `CALL A` 脱节 | `battle.lua` 中 `CheckIfEquipNotRight/GetEquipment/RegisterPrevRole` 相关参数错位 | 静态反汇编已确认 `proto130(pc27/42/124/127)` 与 `proto131(pc224/234/240)` 参数寄存器恢复正确；离线回归通过（`main/battle/migong` 全部 `conversion_failed=0`） |
 | 2026-03-22 | `待提交` | 新增 `CALL(C=3)` 窄规则：命中 `func + MOV(arg1) + TGET*(arg2) + CALL` 形态时强制 `copy-fallback`，避免 existing-slice 误保留 FR1 参数布局 | `battle.lua tmp.lua:148 slevels=nil`（`CheckIfSkillUpgraded`） | 离线已验证 `proto132` 两个调用点新增 `MOV11<-10` 与 `MOV10<-9` 搬移链；门禁通过，待真机 |
 | 2026-03-22 | `待提交` | `RegisterWorkflowForSkills` 规则扩展：`CALL(C=6/C=4)` 的第二参数来源由 `TDUP` 扩展为 `TDUP|MOV`（root proto），覆盖 `AttackLogic.lua` 中 `KSTR+MOV+FNEW+...` 形态 | `AttackLogic.lua` 报 `RegisterWorkflowForSkills: attempt to concatenate a table value` | 离线反汇编已确认目标段 33 个调用点全部带搬移链（`fail=0`），待真机 |
 | 2026-03-22 | `待提交` | 新增 battle 定向门禁：校验 `RegisterWorkflowForSkills` 的 `CALL(C=6/C=4)` 调用点在 FR2 产物中均带正确 MOV 搬移链（防“脚本过、真机仍原错”） | battle `RegisterWorkflowForSkills` 旧错误反复 | 本地门禁通过（`hits=21`，`fail=0`） |

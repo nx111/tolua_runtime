@@ -1768,6 +1768,116 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      old_last == (BCReg)(old_first + 1) && pc >= 3) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
+    BCReg base = bc_a(consumer_ins);
+
+    /* Keep method-style two-arg calls as-is:
+       MOV self<-base; TGET* func<-base; <arg2-def>; CALL(C=3).
+       Shifting this shape can move self/arg2 away from A+1/A+2 and corrupt calls. */
+    if (tolua_ins_writes_reg(prev1_op, prev1, old_last) &&
+        prev1_op != BC_CALL &&
+        prev1_op != BC_CALLM &&
+        prev1_op != BC_CALLT &&
+        prev1_op != BC_CALLMT &&
+        prev1_op != BC_VARG &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
+        bc_a(prev2) == base &&
+        bc_b(prev2) == base &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev3) == old_first &&
+        bc_d(prev3) == base) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for method-self CALL(C=3) old=[%u,%u] base=%u",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)base);
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 2 &&
+      old_first == old_last && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCReg base = bc_a(consumer_ins);
+
+    /* Keep one-arg direct calls as-is:
+       MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; CALL(C=2).
+       Re-shifting can move arg1 away from A+1 and break no-extra-arg method calls. */
+    if (bc_op(prev2) == BC_MOV &&
+        bc_a(prev2) == old_first &&
+        (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
+         prev1_op == BC_UGET || prev1_op == BC_GGET) &&
+        bc_a(prev1) == base &&
+        ((prev1_op != BC_TGETS && prev1_op != BC_TGETV && prev1_op != BC_TGETB) ||
+         bc_b(prev1) == bc_d(prev2))) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for direct CALL(C=2) old=%u base=%u src=%u",
+                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev2));
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      old_last == (BCReg)(old_first + 1) && pc >= 3) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCOp prev2_op = bc_op(prev2);
+    BCReg base = bc_a(consumer_ins);
+
+    /* Keep two-arg direct calls as-is:
+       MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; MOV arg2<-rY; CALL(C=3). */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_a(prev1) == old_last &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev3) == old_first &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+         prev2_op == BC_UGET || prev2_op == BC_GGET) &&
+        bc_a(prev2) == base &&
+        ((prev2_op != BC_TGETS && prev2_op != BC_TGETV && prev2_op != BC_TGETB) ||
+         bc_b(prev2) == bc_d(prev3))) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for direct CALL(C=3) old=[%u,%u] base=%u src=%u",
+                       (unsigned int)old_first, (unsigned int)old_last, (unsigned int)base,
+                       (unsigned int)bc_d(prev3));
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_b(consumer_ins) == 1 && bc_c(consumer_ins) == 4 &&
+      old_last == (BCReg)(old_first + 2) && pc >= 4) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCOp prev4_op = bc_op(prev4);
+    BCReg base = bc_a(consumer_ins);
+
+    /* Keep passthrough three-arg calls fed directly from function params:
+       ... TGET* func; MOV arg1<-r0; MOV arg2<-r1; MOV arg3<-r2; CALL(C=4). */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev1) == old_last &&
+        bc_d(prev1) == 2 &&
+        bc_a(prev2) == (BCReg)(old_first + 1) &&
+        bc_d(prev2) == 1 &&
+        bc_a(prev3) == old_first &&
+        bc_d(prev3) == 0 &&
+        (prev4_op == BC_TGETS || prev4_op == BC_TGETV || prev4_op == BC_TGETB) &&
+        bc_a(prev4) == base &&
+        bc_b(prev4) == base) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for CALL(C=4,B=1) param-pass old=[%u,%u] base=%u",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)base);
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
       old_last == (BCReg)(old_first + 1) && pc >= 2) {
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);

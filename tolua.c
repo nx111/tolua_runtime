@@ -1710,6 +1710,55 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                    (unsigned int)old_first, (unsigned int)old_last);
   }
 
+  if (consumer_op == BC_CALL && bc_b(consumer_ins) == 1 && bc_c(consumer_ins) == 3 &&
+      old_last == (BCReg)(old_first + 1) && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+
+    /* Keep CALL(C=3,B=1) with trailing TGETS+TGETV arg2 chain as-is.
+       Repacking this shape can swap/drop DoAllTrigger-style args and poison
+       later attribute updates in battle init. */
+    if (bc_op(prev1) == BC_TGETV &&
+        bc_a(prev1) == old_last &&
+        bc_b(prev1) == old_last &&
+        (bc_op(prev2) == BC_TGETS || bc_op(prev2) == BC_TGETV || bc_op(prev2) == BC_TGETB) &&
+        bc_a(prev2) == old_last) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for CALL(C=3,B=1) tgetv-tail old=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last);
+      return TOLUA_BCCONV_OK;
+    }
+    if (bc_op(prev1) == BC_CAT &&
+        bc_a(prev1) == old_last &&
+        bc_b(prev1) == old_last &&
+        bc_c(prev1) >= old_last) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for CALL(C=3,B=1) cat-tail old=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last);
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      old_last == (BCReg)(old_first + 1) && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+
+    /* Already pre-shifted for FR2 call args:
+       MOV A+2,A+1; MOV A+1,A; CALL(A, C=3).
+       Re-entering repack here duplicates MOV pairs and can snowball. */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_a(prev1) == (BCReg)(old_first + 1) &&
+        bc_d(prev1) == old_first &&
+        bc_a(prev2) == (BCReg)(old_last + 1) &&
+        bc_d(prev2) == old_last) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for pre-shifted CALL(C=3) old=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last);
+      return TOLUA_BCCONV_OK;
+    }
+  }
+
   new_first = (BCReg)(old_first + 1);
   new_last = (BCReg)(old_last + 1);
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 4 && pc >= 2) {
@@ -2415,6 +2464,31 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
     have_old_next = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, (BCReg)(old_reg + 1),
                                                   &old_next_writer_pc, &old_next_writer_op, &old_next_writer_ins);
     if (have_old_next &&
+        old_last == (BCReg)(old_first + 1) &&
+        (old_writer_op == BC_CALL || old_writer_op == BC_CALLM ||
+         old_writer_op == BC_CALLT || old_writer_op == BC_CALLMT ||
+         old_writer_op == BC_VARG || old_writer_op == BC_ITERC ||
+         old_writer_op == BC_ITERN) &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_next_writer_op == new_writer_op &&
+        old_next_writer_op != BC_CALL &&
+        old_next_writer_op != BC_CALLM &&
+        old_next_writer_op != BC_CALLT &&
+        old_next_writer_op != BC_CALLMT &&
+        old_next_writer_op != BC_VARG &&
+        old_next_writer_op != BC_ITERC &&
+        old_next_writer_op != BC_ITERN &&
+        old_writer_pc + 16 >= pc &&
+        old_next_writer_pc + 12 >= pc) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: call-result arg1 aliases old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                       (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                       (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                       (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+      return 0;
+    }
+    if (have_old_next &&
         ((((old_writer_op == BC_TGETS || old_writer_op == BC_TGETV || old_writer_op == BC_TGETB ||
             old_writer_op == BC_GGET || old_writer_op == BC_UGET) &&
            (new_writer_op == BC_TNEW || new_writer_op == BC_TDUP ||
@@ -2644,6 +2718,58 @@ static int tolua_try_accept_existing_fr2_slice(const uint8_t *buf, size_t bc_pos
   if (new_first > new_last || new_last > BCMAX_A) return TOLUA_BCCONV_OK;
   consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
   consumer_op = bc_op(consumer);
+  if (consumer_op == BC_CALL && bc_b(consumer) == 1 && bc_c(consumer) == 3 && pc >= 3) {
+    BCReg base = bc_a(consumer);
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+
+    /* Guard calls already rewritten by call-frame-shift:
+       MOV A+2,A+1; MOV A+1,A; MOV A,A-1; CALL(A, C=3).
+       Re-accepting an "existing FR2 slice" here re-shifts args and corrupts
+       (func,arg1,arg2) ordering. */
+    if (bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev1) == base &&
+        bc_d(prev1) == (BCReg)(base - 1) &&
+        bc_a(prev2) == (BCReg)(base + 1) &&
+        bc_d(prev2) == base &&
+        bc_a(prev3) == (BCReg)(base + 2) &&
+        bc_d(prev3) == (BCReg)(base + 1)) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip existing FR2 slice for pre-shifted CALL(C=3) base=%u new=[%u,%u]",
+                       (unsigned int)base,
+                       (unsigned int)new_first, (unsigned int)new_last);
+      return TOLUA_BCCONV_OK;
+    }
+    if (pc >= 5 &&
+        bc_op(prev1) == BC_MOV &&
+        bc_op(prev2) == BC_MOV &&
+        bc_op(prev3) == BC_MOV &&
+        bc_a(prev1) == base &&
+        bc_d(prev1) == (BCReg)(base - 1) &&
+        bc_a(prev2) == (BCReg)(base + 2) &&
+        bc_d(prev2) == base &&
+        bc_a(prev3) == (BCReg)(base + 3) &&
+        bc_d(prev3) == (BCReg)(base + 2)) {
+      BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+      BCIns prev5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+      BCOp prev5_op = bc_op(prev5);
+
+      if (bc_op(prev4) == BC_TGETV &&
+          bc_a(prev4) == (BCReg)(base + 2) &&
+          bc_b(prev4) == (BCReg)(base + 2) &&
+          (prev5_op == BC_TGETS || prev5_op == BC_TGETV || prev5_op == BC_TGETB) &&
+          bc_a(prev5) == (BCReg)(base + 2)) {
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "skip existing FR2 slice for widened pre-shift CALL(C=3) base=%u new=[%u,%u]",
+                         (unsigned int)base,
+                         (unsigned int)new_first, (unsigned int)new_last);
+        return TOLUA_BCCONV_OK;
+      }
+    }
+  }
   if (consumer_op == BC_CALL && bc_b(consumer) == 1 && bc_c(consumer) > 2 && pc >= 2) {
     BCReg old_first = (BCReg)(bc_a(consumer) + 1);
     BCReg old_last = (BCReg)(bc_a(consumer) + bc_c(consumer) - 1);
@@ -2813,17 +2939,9 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
     int overlap = !(new_last < old_first || new_first > old_last);
     int touches_call_args = !(old_last < call_arg_first || old_first > call_arg_last);
 
-    if (reason && strcmp(reason, "target-touch-fail") == 0 &&
-        consumer_op_at_pc == BC_CALL && bc_c(consumer_at_pc) == 3 && bc_b(consumer_at_pc) == 1 &&
-        pc > 0) {
-      BCIns prev_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
-      BCOp prev_op = bc_op(prev_ins);
-      if (prev_op == BC_CAT &&
-          bc_a(prev_ins) == (BCReg)(call_arg_first + 1) &&
-          bc_b(prev_ins) == (BCReg)(call_arg_first + 1) &&
-          bc_c(prev_ins) >= (BCReg)(call_arg_first + 1)) {
-        allow_call_frame_shift = 1;
-      }
+    if ((consumer_op_at_pc == BC_CALL && bc_c(consumer_at_pc) == 3 && bc_b(consumer_at_pc) == 1) ||
+        (consumer_op_at_pc == BC_CALLT && bc_d(consumer_at_pc) == 3)) {
+      allow_call_frame_shift = 1;
     }
 
     if (overlap && touches_call_args) {

@@ -1671,6 +1671,31 @@ static int tolua_reg_is_passthrough_seed_before_pc(const uint8_t *buf, size_t bc
   return !tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, reg, NULL, NULL, NULL);
 }
 
+static int tolua_reg_traces_to_passthrough_seed(const uint8_t *buf, size_t bc_pos, int be,
+                                                uint32_t pc, BCReg reg, int depth)
+{
+  uint32_t writer_pc = UINT32_MAX;
+  BCOp writer_op = BC__MAX;
+  BCIns writer_ins = 0;
+
+  if (depth <= 0) return 0;
+  if (!tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, reg,
+                                     &writer_pc, &writer_op, &writer_ins)) {
+    return 1;
+  }
+
+  if (writer_op == BC_MOV) {
+    return tolua_reg_traces_to_passthrough_seed(buf, bc_pos, be,
+                                                writer_pc, bc_d(writer_ins), depth - 1);
+  }
+  if (writer_op == BC_TGETS || writer_op == BC_TGETV || writer_op == BC_TGETB) {
+    return tolua_reg_traces_to_passthrough_seed(buf, bc_pos, be,
+                                                writer_pc, bc_b(writer_ins), depth - 1);
+  }
+
+  return 0;
+}
+
 static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                                  uint32_t pc, BCReg old_first, BCReg old_last,
                                                  uint8_t *framesize_io, const uint8_t *targets,
@@ -1785,10 +1810,11 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep method-style two-arg calls as-is only for MOV-fed arg2:
+    /* Keep method-style two-arg calls as-is only when self/base traces back
+       to caller-passthrough seeds and arg2 is MOV-fed:
        MOV self<-base; TGET* func<-base; MOV arg2<-rX; CALL(C=3).
        Shifting this shape can move self/arg2 away from A+1/A+2 and corrupt calls. */
-    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+    if (tolua_reg_traces_to_passthrough_seed(buf, bc_pos, be, pc, base, 8) &&
         prev1_op == BC_MOV &&
         bc_a(prev1) == old_last &&
         (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&

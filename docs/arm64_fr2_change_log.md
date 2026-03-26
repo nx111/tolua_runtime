@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-26 17:20  
+最后更新：2026-03-26 18:05  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-26 | `待提交` | 收敛 `method-self CALL(C=3)`：由“非 root proto”改为“self/base 回溯到调用者透传 seed 才跳过”；其余 method-self 正常做 FR2 右移 | `migong.lua tmp.lua:29 bad argument #2 to 'byte' (number expected, got table)` | 离线反汇编确认 `proto2 line29` 已从 `MOV16/MOV17` 调整为 `MOV17/MOV18`（参数窗口右移）；battle 关键点 `proto130 pc27/42/107/112` 与 `proto131 pc234/240` 仍保持 |
 | 2026-03-26 | `待提交` | 将 `direct CALL(C=2/3)` 跳过条件从 `root proto(pflags=0x03)` 特判改为数据流判定：仅当 `arg1` 源寄存器在调用前“无最近写入”（passthrough seed）才跳过右移 | 去除临时 chunk 特判，定位真正差异 | 离线回归通过；`main proto5 pc111` 维持 FR2 正确形态（`MOV 18<-13`,`MOV 19<-15`,`CALL A16 C3`）；`battle proto130 pc42` 与 `proto131 pc234/240` 关键点保持 |
 | 2026-03-26 | `待提交` | 收窄 `direct CALL(C=2/3)`：仅非 root proto(`pflags!=0x03`) 生效；root proto 回退到默认搬移，避免反射链方法调用 self/arg 错槽 | `main.lua tmp.lua:37 bad argument #1 to GetFields (Type expected, got number)` | 静态反汇编已确认 `main proto5 line37` 由 `MOV17/MOV18` 修正为 `MOV18/MOV19`（FR2 正确参数槽）；`line28 ContainsKey` 保持正确；battle 关键点未回退 |
 | 2026-03-26 | `待提交` | 收窄 `method-self CALL(C=3)`：仅非 root proto(`pflags!=0x03`) 且 `arg2` 为 `MOV` 时跳过右移；保留 `CALL(C=4,B=1) param-pass` 与 `direct CALL(C=2/3)` 规则 | `main.lua tmp.lua:28 bad argument #1 to ContainsKey (Dictionary expected, got string)` | 静态反汇编已确认 `main proto5 line28` 由 `MOV14/KSTR15` 修正为 `MOV15/KSTR16`（FR2 正确参数槽）；battle 关键点 `proto130(42)/proto131(234,240)` 仍保持正确 |

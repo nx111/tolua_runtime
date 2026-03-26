@@ -1626,6 +1626,9 @@ static int tolua_try_fix_tail_call_arg_chain_for_fr2(uint8_t *buf, size_t bc_pos
                                                       uint32_t pc, uint8_t *framesize_io,
                                                       const uint8_t *targets,
                                                       const tolua_bcdebug_ctx *ctx, int *handled);
+static int tolua_find_nearest_reg_writer(const uint8_t *buf, size_t bc_pos, int be,
+                                         uint32_t pc, BCReg reg,
+                                         uint32_t *out_pc, BCOp *out_op, BCIns *out_ins);
 static int tolua_window_touches_range(const uint8_t *buf, size_t bc_pos, int be,
                                       int first_pc, uint32_t stop_pc,
                                       BCReg first, BCReg last);
@@ -1660,6 +1663,12 @@ static int tolua_window_has_nonselected_touch(const uint8_t *buf, size_t bc_pos,
   }
 
   return 0;
+}
+
+static int tolua_reg_is_passthrough_seed_before_pc(const uint8_t *buf, size_t bc_pos, int be,
+                                                   uint32_t pc, BCReg reg)
+{
+  return !tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, reg, NULL, NULL, NULL);
 }
 
 static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
@@ -1802,10 +1811,10 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev1_op = bc_op(prev1);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep one-arg direct calls as-is:
-       MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; CALL(C=2).
-       Re-shifting can move arg1 away from A+1 and break no-extra-arg method calls. */
-    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+    /* Keep one-arg direct passthrough calls as-is:
+       MOV arg1<-param; (TGET*|UGET|GGET) func<-param; CALL(C=2).
+       Re-shifting this shape can misroute untouched caller params into locals. */
+    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
         bc_op(prev2) == BC_MOV &&
         bc_a(prev2) == old_first &&
         (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
@@ -1827,9 +1836,9 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep two-arg direct calls as-is:
-       MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; MOV arg2<-rY; CALL(C=3). */
-    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+    /* Keep two-arg direct passthrough calls as-is:
+       MOV arg1<-param; (TGET*|UGET|GGET) func<-param; MOV arg2<-rY; CALL(C=3). */
+    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev3)) &&
         bc_op(prev1) == BC_MOV &&
         bc_a(prev1) == old_last &&
         bc_op(prev3) == BC_MOV &&

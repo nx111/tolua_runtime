@@ -1776,15 +1776,12 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep method-style two-arg calls as-is:
-       MOV self<-base; TGET* func<-base; <arg2-def>; CALL(C=3).
+    /* Keep method-style two-arg calls as-is only for MOV-fed arg2:
+       MOV self<-base; TGET* func<-base; MOV arg2<-rX; CALL(C=3).
        Shifting this shape can move self/arg2 away from A+1/A+2 and corrupt calls. */
-    if (tolua_ins_writes_reg(prev1_op, prev1, old_last) &&
-        prev1_op != BC_CALL &&
-        prev1_op != BC_CALLM &&
-        prev1_op != BC_CALLT &&
-        prev1_op != BC_CALLMT &&
-        prev1_op != BC_VARG &&
+    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+        prev1_op == BC_MOV &&
+        bc_a(prev1) == old_last &&
         (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
         bc_a(prev2) == base &&
         bc_b(prev2) == base &&

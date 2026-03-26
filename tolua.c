@@ -2479,8 +2479,8 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
         old_next_writer_op != BC_VARG &&
         old_next_writer_op != BC_ITERC &&
         old_next_writer_op != BC_ITERN &&
-        old_writer_pc + 16 >= pc &&
-        old_next_writer_pc + 12 >= pc) {
+        old_writer_pc + 8 >= pc &&
+        old_next_writer_pc + 8 >= pc) {
       TOLUA_REPACK_LOG(ctx, pc,
                        "reject existing FR2 slice: call-result arg1 aliases old-second old=%u(pc=%u,%s) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
                        (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),

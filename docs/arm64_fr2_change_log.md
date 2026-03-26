@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-26 | `待提交` | 收窄 `direct CALL(C=2/3)`：仅非 root proto(`pflags!=0x03`) 生效；root proto 回退到默认搬移，避免反射链方法调用 self/arg 错槽 | `main.lua tmp.lua:37 bad argument #1 to GetFields (Type expected, got number)` | 静态反汇编已确认 `main proto5 line37` 由 `MOV17/MOV18` 修正为 `MOV18/MOV19`（FR2 正确参数槽）；`line28 ContainsKey` 保持正确；battle 关键点未回退 |
 | 2026-03-26 | `待提交` | 收窄 `method-self CALL(C=3)`：仅非 root proto(`pflags!=0x03`) 且 `arg2` 为 `MOV` 时跳过右移；保留 `CALL(C=4,B=1) param-pass` 与 `direct CALL(C=2/3)` 规则 | `main.lua tmp.lua:28 bad argument #1 to ContainsKey (Dictionary expected, got string)` | 静态反汇编已确认 `main proto5 line28` 由 `MOV14/KSTR15` 修正为 `MOV15/KSTR16`（FR2 正确参数槽）；battle 关键点 `proto130(42)/proto131(234,240)` 仍保持正确 |
 | 2026-03-26 | `待提交` | 新增 4 条窄规则：`method-self CALL(C=3)`、`direct CALL(C=2)`、`direct CALL(C=3)`、`CALL(C=4,B=1) param-pass` 均跳过 FR2 参数右移，避免 `MOV` 链被整体 +1 后与 `CALL A` 脱节 | `battle.lua` 中 `CheckIfEquipNotRight/GetEquipment/RegisterPrevRole` 相关参数错位 | 静态反汇编已确认 `proto130(pc27/42/124/127)` 与 `proto131(pc224/234/240)` 参数寄存器恢复正确；离线回归通过（`main/battle/migong` 全部 `conversion_failed=0`） |
 | 2026-03-22 | `待提交` | 新增 `CALL(C=3)` 窄规则：命中 `func + MOV(arg1) + TGET*(arg2) + CALL` 形态时强制 `copy-fallback`，避免 existing-slice 误保留 FR1 参数布局 | `battle.lua tmp.lua:148 slevels=nil`（`CheckIfSkillUpgraded`） | 离线已验证 `proto132` 两个调用点新增 `MOV11<-10` 与 `MOV10<-9` 搬移链；门禁通过，待真机 |

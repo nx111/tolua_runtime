@@ -1805,7 +1805,8 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     /* Keep one-arg direct calls as-is:
        MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; CALL(C=2).
        Re-shifting can move arg1 away from A+1 and break no-extra-arg method calls. */
-    if (bc_op(prev2) == BC_MOV &&
+    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+        bc_op(prev2) == BC_MOV &&
         bc_a(prev2) == old_first &&
         (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
          prev1_op == BC_UGET || prev1_op == BC_GGET) &&
@@ -1828,7 +1829,8 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
 
     /* Keep two-arg direct calls as-is:
        MOV arg1<-rX; (TGET*|UGET|GGET) func<-rX; MOV arg2<-rY; CALL(C=3). */
-    if (bc_op(prev1) == BC_MOV &&
+    if ((ctx == NULL || ctx->proto_flags != 0x03) &&
+        bc_op(prev1) == BC_MOV &&
         bc_a(prev1) == old_last &&
         bc_op(prev3) == BC_MOV &&
         bc_a(prev3) == old_first &&

@@ -783,17 +783,10 @@ static int tolua_get_slice_def_reg(BCOp op, BCIns ins, BCReg old_first, BCReg ol
   if (tolua_get_simple_repack_def_reg(op, ins, out)) return 1;
 
   switch (op) {
-    case BC_CALL: {
-      BCReg a = bc_a(ins);
-      BCReg last = (BCReg)(a + bc_c(ins) - 1);
-
-      if (bc_b(ins) != 2) return 0;
-      if (a != old_first) return 0;
-      if (!tolua_reg_in_closed_range(a, old_first, old_last)) return 0;
-      if (!tolua_reg_in_closed_range(last, old_first, old_last)) return 0;
-      *out = a;
-      return 1;
-    }
+    /* CALL uses A as both call base and result base. Rewriting A in-place can
+       silently retarget the callee (e.g. floor -> stale reg), so CALL must not
+       be treated as a movable slice definition. Let copy-fallback move results. */
+    case BC_CALL:
     default:
       return 0;
   }
@@ -2736,6 +2729,8 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
                                                    const tolua_bcdebug_ctx *ctx,
                                                    const char *reason, int *handled)
 {
+  BCIns consumer_at_pc = 0;
+  BCOp consumer_op_at_pc = BC__MAX;
   uint32_t copy_count = 0;
   uint32_t insert_pc = pc;
   int allow_target_entry = 0;
@@ -2798,8 +2793,110 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
     return TOLUA_BCCONV_OK;
   }
 
+  consumer_at_pc = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  consumer_op_at_pc = bc_op(consumer_at_pc);
   copy_count = (uint32_t)(old_last - old_first + 1);
   if (copy_count == 0 || copy_count > TOLUA_MAX_INSERT_COPIES) return TOLUA_BCCONV_OK;
+
+  /* If copy-fallback inserts right at CALL/CALLT entry and shifts an overlapping
+     argument range, plain old->new MOVs can overwrite live call args before call.
+     For the full-arg right-shift shape, rewrite the call frame (func+args) as a
+     block and move CALL/CALLT base accordingly. */
+  if (insert_pc == pc && (consumer_op_at_pc == BC_CALL || consumer_op_at_pc == BC_CALLT)) {
+    BCReg call_base = bc_a(consumer_at_pc);
+    BCReg call_nargs = (consumer_op_at_pc == BC_CALL)
+                         ? (bc_c(consumer_at_pc) > 0 ? (BCReg)(bc_c(consumer_at_pc) - 1) : 0)
+                         : (bc_d(consumer_at_pc) > 0 ? (BCReg)(bc_d(consumer_at_pc) - 1) : 0);
+    BCReg call_arg_first = (BCReg)(call_base + 1);
+    BCReg call_arg_last = (BCReg)(call_base + call_nargs);
+    int allow_call_frame_shift = 0;
+    int overlap = !(new_last < old_first || new_first > old_last);
+    int touches_call_args = !(old_last < call_arg_first || old_first > call_arg_last);
+
+    if (reason && strcmp(reason, "target-touch-fail") == 0 &&
+        consumer_op_at_pc == BC_CALL && bc_c(consumer_at_pc) == 3 && bc_b(consumer_at_pc) == 1 &&
+        pc > 0) {
+      BCIns prev_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+      BCOp prev_op = bc_op(prev_ins);
+      if (prev_op == BC_CAT &&
+          bc_a(prev_ins) == (BCReg)(call_arg_first + 1) &&
+          bc_b(prev_ins) == (BCReg)(call_arg_first + 1) &&
+          bc_c(prev_ins) >= (BCReg)(call_arg_first + 1)) {
+        allow_call_frame_shift = 1;
+      }
+    }
+
+    if (overlap && touches_call_args) {
+      if (allow_call_frame_shift &&
+          new_first == (BCReg)(old_first + 1) &&
+          new_last == (BCReg)(old_last + 1) &&
+          old_first == call_arg_first &&
+          old_last == call_arg_last &&
+          (consumer_op_at_pc == BC_CALLT || bc_b(consumer_at_pc) == 1)) {
+        BCReg frame_first = call_base;
+        BCReg frame_last = call_arg_last;
+        uint32_t frame_count = 0;
+        BCIns shifted_consumer = consumer_at_pc;
+        BCReg shifted_base = 0;
+
+        if (frame_last >= BCMAX_A) {
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "copy-fallback skip reason=%s call-frame-shift-overflow base=%u args=%u",
+                           reason ? reason : "unknown",
+                           (unsigned int)call_base, (unsigned int)call_nargs);
+          return TOLUA_BCCONV_OK;
+        }
+
+        frame_count = (uint32_t)(frame_last - frame_first + 1);
+        if (frame_count == 0 || frame_count > TOLUA_MAX_INSERT_COPIES) {
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "copy-fallback skip reason=%s call-frame-shift-count=%u",
+                           reason ? reason : "unknown", (unsigned int)frame_count);
+          return TOLUA_BCCONV_OK;
+        }
+
+        for (i = 0; i < frame_count; i++) {
+          uint32_t rev = frame_count - 1 - i;
+          copy_dst[i] = (BCReg)(frame_first + rev + 1);
+          copy_src[i] = (BCReg)(frame_first + rev);
+        }
+
+        if (!tolua_schedule_insert_copies(ctx, pc, insert_pc, copy_dst, copy_src, (uint8_t)frame_count)) {
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "copy-fallback skip reason=%s call-frame-shift schedule-failed",
+                           reason ? reason : "unknown");
+          return TOLUA_BCCONV_OK;
+        }
+
+        shifted_base = (BCReg)(call_base + 1);
+        setbc_a(&shifted_consumer, shifted_base);
+        tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)shifted_consumer, be);
+        tolua_pending_insert_copy.allow_target_entry = (uint8_t)allow_target_entry;
+
+        status = tolua_update_framesize_checked(framesize_io, frame_last + 1, ctx, pc,
+                                                shifted_consumer, consumer_op_at_pc);
+        if (status != TOLUA_BCCONV_OK) return status;
+
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "copy-fallback call-frame-shift reason=%s insert_pc=%u base=%u->%u args=[%u,%u]->[%u,%u]",
+                         reason ? reason : "unknown",
+                         (unsigned int)insert_pc,
+                         (unsigned int)call_base, (unsigned int)shifted_base,
+                         (unsigned int)call_arg_first, (unsigned int)call_arg_last,
+                         (unsigned int)(call_arg_first + 1), (unsigned int)(call_arg_last + 1));
+        *handled = 1;
+        return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
+      }
+
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "copy-fallback keep legacy-overlap reason=%s old=[%u,%u] new=[%u,%u] base=%u nargs=%u b=%u",
+                       reason ? reason : "unknown",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last,
+                       (unsigned int)call_base, (unsigned int)call_nargs,
+                       (unsigned int)(consumer_op_at_pc == BC_CALL ? bc_b(consumer_at_pc) : 0));
+    }
+  }
 
   if (tolua_reg_live_after_pc(buf, bc_pos, numbc, be, pc + 1, new_last)) {
     for (live_scan = pc + 1; live_scan < numbc; live_scan++) {

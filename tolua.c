@@ -7805,30 +7805,30 @@ static int tolua_try_repack_cat_split_hole(uint8_t *buf, size_t bc_pos, uint32_t
                                            const tolua_bcshift_map *map,
                                            const tolua_bcdebug_ctx *ctx, int *changed)
 {
-  BCReg part1_first = old_first;
-  BCReg part1_last = hole_reg - 1;
-  BCReg part2_first = hole_reg + 1;
-  BCReg part2_last = old_last;
-  int part1_count = part1_last >= part1_first ? (int)(part1_last - part1_first + 1) : 0;
-  int part2_count = part2_last >= part2_first ? (int)(part2_last - part2_first + 1) : 0;
+  int total_count = (int)(old_last - old_first + 1);
   BCReg copy_dst[TOLUA_MAX_INSERT_COPIES];
   BCReg copy_src[TOLUA_MAX_INSERT_COPIES];
   int cand_base = -1;
-  int hole, live_conflict;
+  int hole = -1;
+  int live_conflict = 0;
   BCReg live_reg;
-  int p;
+  int p = 0;
   int status;
-  int total_count = part1_count + part2_count;
+  int cand_last = -1;
 
   *changed = 0;
+  if (bc_op(cat) != BC_CAT) return TOLUA_BCCONV_OK;
+  if (hole_reg < old_first || hole_reg > old_last) return TOLUA_BCCONV_OK;
   if (total_count <= 0) return TOLUA_BCCONV_OK;
+  if (total_count > TOLUA_MAX_INSERT_COPIES) return TOLUA_BCCONV_OK;
   if (tolua_pending_insert_copy.active) return TOLUA_BCCONV_OK;
+  if (targets[pc]) return TOLUA_BCCONV_OK;
 
   for (p = 0; p < 2; p++) {
     unsigned int start = p == 0 ? 0u : (unsigned int)*framesize_io;
 
     for (cand_base = (int)start; cand_base <= BCMAX_A; cand_base++) {
-      int cand_last = cand_base + total_count - 1;
+      cand_last = cand_base + total_count - 1;
       if (cand_last > BCMAX_A) break;
       if (p == 0 && cand_last >= (unsigned int)*framesize_io) break;
 
@@ -7850,14 +7850,23 @@ static int tolua_try_repack_cat_split_hole(uint8_t *buf, size_t bc_pos, uint32_t
   }
 
   if (cand_base < 0 || cand_base + total_count - 1 > BCMAX_A) return TOLUA_BCCONV_OK;
+  if (cand_base == (int)old_first) return TOLUA_BCCONV_OK;
 
-  for (p = 0; p < part1_count; p++) {
-    copy_dst[p] = (BCReg)(cand_base + p);
-    copy_src[p] = (BCReg)(part1_first + p);
-  }
-  for (p = 0; p < part2_count; p++) {
-    copy_dst[part1_count + p] = (BCReg)(cand_base + part1_count + p);
-    copy_src[part1_count + p] = (BCReg)(part2_first + p);
+  /*
+  ** Preserve full CAT operand semantics (including the hole register value).
+  ** Allow overlapping source/target ranges by emitting MOVs in memmove-safe order.
+  */
+  if (cand_base > (int)old_first) {
+    for (p = 0; p < total_count; p++) {
+      int rev = total_count - 1 - p;
+      copy_dst[p] = (BCReg)(cand_base + rev);
+      copy_src[p] = (BCReg)(old_first + rev);
+    }
+  } else {
+    for (p = 0; p < total_count; p++) {
+      copy_dst[p] = (BCReg)(cand_base + p);
+      copy_src[p] = (BCReg)(old_first + p);
+    }
   }
 
   if (!tolua_schedule_insert_copies(ctx, pc, pc, copy_dst, copy_src, (uint8_t)total_count)) {
@@ -7875,9 +7884,14 @@ static int tolua_try_repack_cat_split_hole(uint8_t *buf, size_t bc_pos, uint32_t
 
   *changed = 1;
   TOLUA_REPACK_LOG(ctx, pc,
-                   "cat split-hole success old=[%u,%u] hole=%u new_base=%u total=%d part1=%d part2=%d",
+                   "cat split-hole success old=[%u,%u] hole=%u new=[%u,%u] copies=%d overlap=%u",
                    (unsigned int)old_first, (unsigned int)old_last,
-                    (unsigned int)hole_reg, (unsigned int)cand_base, total_count, part1_count, part2_count);
+                   (unsigned int)hole_reg,
+                   (unsigned int)cand_base,
+                   (unsigned int)(cand_base + total_count - 1),
+                   total_count,
+                   (unsigned int)tolua_ranges_overlap((BCReg)cand_base, (BCReg)(cand_base + total_count - 1),
+                                                      old_first, old_last));
   return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
 }
 

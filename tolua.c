@@ -49,6 +49,9 @@ SOFTWARE.
 #include <time.h>
 #include <sys/time.h>
 #endif
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 int toluaflags = FLAG_INDEX_ERROR;
 static int tag = 0;  
@@ -59,6 +62,13 @@ static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
 static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2hybrid-mainbattle";
 
+#if defined(__ANDROID__)
+__attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
+{
+	__android_log_print(ANDROID_LOG_INFO, "tolua-bytecode", "native build=%s loaded", tolua_bytecode_build_tag);
+}
+#endif
+
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
 	char buffer[1024];
@@ -66,6 +76,9 @@ static void tolua_emitlogv(const char *fmt, va_list argp)
 #ifdef _WIN32
 	OutputDebugStringA(buffer);
 	OutputDebugStringA("\n");
+#endif
+#if defined(__ANDROID__)
+	__android_log_print(ANDROID_LOG_INFO, "tolua-bytecode", "%s", buffer);
 #endif
 	fprintf(stderr, "%s\n", buffer);
 }
@@ -84,6 +97,9 @@ static void tolua_setbytecodedebugv(const char *fmt, va_list argp)
 #ifdef _WIN32
 	OutputDebugStringA(tolua_last_bytecode_debug);
 	OutputDebugStringA("\n");
+#endif
+#if defined(__ANDROID__)
+	__android_log_print(ANDROID_LOG_INFO, "tolua-bytecode", "%s", tolua_last_bytecode_debug);
 #endif
 	fprintf(stderr, "%s\n", tolua_last_bytecode_debug);
 }

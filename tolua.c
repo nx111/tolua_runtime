@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260322-c4guard";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-copyfb-c4livecopy";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -3175,6 +3175,35 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
 
     deferred_overwrite = tolua_future_fr2_arg_shift_writes_reg(buf, bc_pos, numbc, be, pc + 1, new_last);
     if (!deferred_overwrite) {
+      if (consumer_op_at_pc == BC_CALL &&
+          bc_b(consumer_at_pc) == 1 &&
+          bc_c(consumer_at_pc) >= 4) {
+        for (i = 0; i < copy_count; i++) {
+          uint32_t rev = copy_count - 1 - i;
+          copy_dst[i] = (BCReg)(new_first + rev);
+          copy_src[i] = (BCReg)(old_first + rev);
+        }
+
+        if (tolua_schedule_insert_copies(ctx, pc, insert_pc, copy_dst, copy_src, (uint8_t)copy_count)) {
+          tolua_pending_insert_copy.allow_target_entry = (uint8_t)allow_target_entry;
+
+          status = tolua_update_framesize_checked(framesize_io, new_last, ctx, pc,
+                                                  (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be),
+                                                  bc_op((BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be)));
+          if (status != TOLUA_BCCONV_OK) return status;
+
+          TOLUA_REPACK_LOG(ctx, pc,
+                           "copy-fallback live-after copy insert reason=%s insert_pc=%u count=%u range=[%u,%u]->[%u,%u]",
+                           reason ? reason : "unknown",
+                           (unsigned int)insert_pc,
+                           (unsigned int)copy_count,
+                           (unsigned int)old_first, (unsigned int)old_last,
+                           (unsigned int)new_first, (unsigned int)new_last);
+          *handled = 1;
+          return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
+        }
+      }
+
       if (first_touch_pc != UINT32_MAX &&
           first_touch_kind[0] == 'r' &&
           copy_count + 1 <= TOLUA_MAX_INSERT_COPIES) {

@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-copyfb-c4livecopy";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c4-callframeshift";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1806,22 +1806,41 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
     BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
+    int layout_mov_prev2 = 0;
+    int layout_mov_prev1 = 0;
 
     /* Keep one-arg direct passthrough calls as-is:
        MOV arg1<-param; (TGET*|UGET|GGET) func<-param; CALL(C=2).
        Re-shifting this shape can misroute untouched caller params into locals. */
-    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
-        bc_op(prev2) == BC_MOV &&
-        bc_a(prev2) == old_first &&
-        (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
-         prev1_op == BC_UGET || prev1_op == BC_GGET) &&
-        bc_a(prev1) == base &&
-        ((prev1_op != BC_TGETS && prev1_op != BC_TGETV && prev1_op != BC_TGETB) ||
-         bc_b(prev1) == bc_d(prev2))) {
+    layout_mov_prev2 =
+      tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
+      prev2_op == BC_MOV &&
+      bc_a(prev2) == old_first &&
+      (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
+       prev1_op == BC_UGET || prev1_op == BC_GGET) &&
+      bc_a(prev1) == base &&
+      ((prev1_op != BC_TGETS && prev1_op != BC_TGETV && prev1_op != BC_TGETB) ||
+       bc_b(prev1) == bc_d(prev2));
+
+    /* Also keep the mirrored producer layout:
+       (TGET*|UGET|GGET) func<-rx; MOV arg1<-param; CALL(C=2). */
+    layout_mov_prev1 =
+      tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
+      prev1_op == BC_MOV &&
+      bc_a(prev1) == old_first &&
+      (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+       prev2_op == BC_UGET || prev2_op == BC_GGET) &&
+      bc_a(prev2) == base &&
+      ((prev2_op != BC_TGETS && prev2_op != BC_TGETV && prev2_op != BC_TGETB) ||
+       bc_b(prev2) == base);
+
+    if (layout_mov_prev2 || layout_mov_prev1) {
       TOLUA_REPACK_LOG(ctx, pc,
                        "skip FR2 arg shift for direct CALL(C=2) old=%u base=%u src=%u",
-                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev2));
+                       (unsigned int)old_first, (unsigned int)base,
+                       (unsigned int)(layout_mov_prev2 ? bc_d(prev2) : bc_d(prev1)));
       return TOLUA_BCCONV_OK;
     }
   }
@@ -2487,6 +2506,49 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
         BCReg copy_dst[TOLUA_MAX_INSERT_COPIES];
         BCReg copy_src[TOLUA_MAX_INSERT_COPIES];
         uint32_t i = 0;
+
+        if (live_consumer_op == BC_CALL &&
+            bc_b(live_consumer_ins) == 1 &&
+            bc_c(live_consumer_ins) >= 4) {
+          BCReg call_base = bc_a(live_consumer_ins);
+          BCReg call_nargs = (BCReg)(bc_c(live_consumer_ins) - 1);
+          BCReg call_arg_first = (BCReg)(call_base + 1);
+          BCReg call_arg_last = (BCReg)(call_base + call_nargs);
+
+          if (new_first == (BCReg)(old_first + 1) &&
+              new_last == (BCReg)(old_last + 1) &&
+              old_first == call_arg_first &&
+              old_last == call_arg_last &&
+              copy_count == (uint32_t)call_nargs &&
+              call_arg_last < BCMAX_A &&
+              copy_count + 1 <= TOLUA_MAX_INSERT_COPIES) {
+            BCIns shifted_consumer = live_consumer_ins;
+            uint32_t frame_count = copy_count + 1;
+            BCReg shifted_base = (BCReg)(call_base + 1);
+
+            for (i = 0; i < frame_count; i++) {
+              uint32_t rev = frame_count - 1 - i;
+              copy_dst[i] = (BCReg)(call_base + rev + 1);
+              copy_src[i] = (BCReg)(call_base + rev);
+            }
+
+            if (tolua_schedule_insert_copies(ctx, pc, pc, copy_dst, copy_src, (uint8_t)frame_count)) {
+              setbc_a(&shifted_consumer, shifted_base);
+              tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)shifted_consumer, be);
+
+              status = tolua_update_framesize_checked(framesize_io, call_arg_last + 1, ctx, pc,
+                                                      shifted_consumer, live_consumer_op);
+              free(selected);
+              if (status != TOLUA_BCCONV_OK) return status;
+              TOLUA_REPACK_LOG(ctx, pc,
+                               "live-after fallback call-frame-shift copy insert base=%u->%u args=[%u,%u]->[%u,%u]",
+                               (unsigned int)call_base, (unsigned int)shifted_base,
+                               (unsigned int)call_arg_first, (unsigned int)call_arg_last,
+                               (unsigned int)(call_arg_first + 1), (unsigned int)(call_arg_last + 1));
+              return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
+            }
+          }
+        }
 
         for (i = 0; i < copy_count; i++) {
           uint32_t rev = copy_count - 1 - i;

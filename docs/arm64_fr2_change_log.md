@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-27 13:20  
+最后更新：2026-03-27 14:50  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-27 | `待提交` | `CALL(C=2)` 规则补充 `TDUP` 实参布局：支持 `func(TGET/UGET/GGET) + TDUP(arg) + CALL` 跳过右移，修复 `line169` 传入 `List2Map` 的参数错位 | `tmp.lua:64 bad argument #1 to ipairs (table expected, got string)` | 离线回归 `offline_regression_semantic10` 通过；`proto202 line169` 恢复 `TDUP A20`（不再被改为 `A21`） |
 | 2026-03-27 | `待提交` | `CALL(C=2)` passthrough 规则补充镜像布局：支持 `func(TGET/UGET/GGET) + MOV(arg) + CALL`，避免 `line137 CreateLuaTable` 参数落到 `A+2` | `BATTLE_BeforeRoleAction tmp.lua:137 invalid arguments to CreateLuaTable` | 离线回归 `offline_regression_semantic9` 通过；`proto8 pc3` 命中 `skip FR2 arg shift for direct CALL(C=2)`，反汇编确认 `MOV A4<-A0` 恢复 |
 | 2026-03-27 | `待提交` | 在 `tolua_shift_proto_slice_right_for_fr2` 的 live-after copy-insert 分支新增 `CALL(B=1,C>=4)` 整帧右移（含函数寄存器 `A`）并同步 `A+=1` | `BATTLE_BeforeInitBattle tmp.lua:711 bad argument #1 to insert (table expected, got string)` | 离线回归 `offline_regression_semantic8` 通过；`battle proto19 pc705/729` 由“仅参数右移”升级为“整帧右移 + `CALL A9->A10`”；关键指纹保持 `workflow_shift_hits=21` |
 | 2026-03-27 | `待提交` | 在 `tolua_try_insert_copy_fallback_for_fr2` 的 live-after 分支补齐 `CALL(B=1,C>=4)` 保护：优先 copy-insert（禁用 spill 重写） | `BATTLE_BeforeInitBattle tmp.lua:711 bad argument #1 to insert (table expected, got string)` | 离线回归 `offline_regression_semantic6` 通过（`main/battle/migong conversion_failed=0`）；battle 日志仍保持 `proto19 pc704/727 live-after fallback copy insert`，未回退为 spill |

@@ -1862,9 +1862,11 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep two-arg direct passthrough calls as-is:
-       MOV arg1<-param; (TGET*|UGET|GGET) func<-param; MOV arg2<-rY; CALL(C=3). */
+    /* Keep two-arg direct passthrough calls as-is only when both args are
+       untouched caller seeds:
+       MOV arg1<-param; (TGET*|UGET|GGET) func<-param; MOV arg2<-param; CALL(C=3). */
     if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev3)) &&
+        tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
         bc_op(prev1) == BC_MOV &&
         bc_a(prev1) == old_last &&
         bc_op(prev3) == BC_MOV &&

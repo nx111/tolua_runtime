@@ -1771,35 +1771,6 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                        (unsigned int)old_first, (unsigned int)old_last);
       return TOLUA_BCCONV_OK;
     }
-    /* Keep passthrough two-arg calls fed directly from function params:
-       UGET/TGET* func; MOV arg1<-r0; MOV arg2<-r1; CALL(C=3).
-       Re-shifting this shape can misroute caller args into stale locals. */
-    if (pc >= 4 &&
-        bc_op(prev1) == BC_MOV &&
-        bc_op(prev2) == BC_MOV &&
-        bc_a(prev1) == old_last &&
-        bc_d(prev1) == 1 &&
-        bc_a(prev2) == old_first &&
-        bc_d(prev2) == 0) {
-      BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
-      BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
-      BCOp prev3_op = bc_op(prev3);
-      BCOp prev4_op = bc_op(prev4);
-      BCReg base = bc_a(consumer_ins);
-
-      if ((prev3_op == BC_TGETS || prev3_op == BC_TGETV || prev3_op == BC_TGETB) &&
-          bc_a(prev3) == base &&
-          bc_b(prev3) == base &&
-          (prev4_op == BC_UGET || prev4_op == BC_GGET || prev4_op == BC_TGETS ||
-           prev4_op == BC_TGETV || prev4_op == BC_TGETB) &&
-          bc_a(prev4) == base) {
-        TOLUA_REPACK_LOG(ctx, pc,
-                         "skip FR2 arg shift for CALL(C=3,B=1) param-pass old=[%u,%u] base=%u",
-                         (unsigned int)old_first, (unsigned int)old_last,
-                         (unsigned int)base);
-        return TOLUA_BCCONV_OK;
-      }
-    }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
       old_last == (BCReg)(old_first + 1) && pc >= 3) {
@@ -1892,26 +1863,6 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev4_op = bc_op(prev4);
     BCReg base = bc_a(consumer_ins);
 
-    /* Keep passthrough three-arg calls fed directly from function params:
-       ... TGET* func; MOV arg1<-r0; MOV arg2<-r1; MOV arg3<-r2; CALL(C=4). */
-    if (bc_op(prev1) == BC_MOV &&
-        bc_op(prev2) == BC_MOV &&
-        bc_op(prev3) == BC_MOV &&
-        bc_a(prev1) == old_last &&
-        bc_d(prev1) == 2 &&
-        bc_a(prev2) == (BCReg)(old_first + 1) &&
-        bc_d(prev2) == 1 &&
-        bc_a(prev3) == old_first &&
-        bc_d(prev3) == 0 &&
-        (prev4_op == BC_TGETS || prev4_op == BC_TGETV || prev4_op == BC_TGETB) &&
-        bc_a(prev4) == base &&
-        bc_b(prev4) == base) {
-      TOLUA_REPACK_LOG(ctx, pc,
-                       "skip FR2 arg shift for CALL(C=4,B=1) param-pass old=[%u,%u] base=%u",
-                       (unsigned int)old_first, (unsigned int)old_last,
-                       (unsigned int)base);
-      return TOLUA_BCCONV_OK;
-    }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
       old_last == (BCReg)(old_first + 1) && pc >= 2) {

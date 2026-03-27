@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-03-27 16:10  
+最后更新：2026-03-27 16:35  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-27 | `待提交` | 回退 `CALL(C=2)` 到 `e8660fb` 的窄条件（仅 `MOV arg1<-passthrough + TGET*/UGET/GGET + CALL(C=2)` 跳过右移），移除 broad/镜像/`TDUP` 跳过 | `DoFile failed: jygame/main.lua err: tmp.lua:10: attempt to index a nil value` | 对照同源 `main.lua`：当前转换产物与 `e8660fb` MD5 完全一致（`d3405e575caac40eff41d2dbb6009c70`）；离线回归 `main/battle/migong` 全部 `conversion_failed=0` |
 | 2026-03-27 | `待提交` | 将 `direct CALL(C=2)` 收敛为统一跳过 FR2 参数右移（覆盖 MOV/TDUP 等一参直调形态） | `tmp.lua:64 bad argument #1 to ipairs (table expected, got string)` 与 `line169 List2Map` 参数错位反复 | 离线回归 `offline_regression_semantic11` 通过；`proto202 line169/241` 均保持 `TDUP A20 + CALL A19 C2` |
 | 2026-03-27 | `待提交` | `CALL(C=2)` 规则补充 `TDUP` 实参布局：支持 `func(TGET/UGET/GGET) + TDUP(arg) + CALL` 跳过右移，修复 `line169` 传入 `List2Map` 的参数错位 | `tmp.lua:64 bad argument #1 to ipairs (table expected, got string)` | 离线回归 `offline_regression_semantic10` 通过；`proto202 line169` 恢复 `TDUP A20`（不再被改为 `A21`） |
 | 2026-03-27 | `待提交` | `CALL(C=2)` passthrough 规则补充镜像布局：支持 `func(TGET/UGET/GGET) + MOV(arg) + CALL`，避免 `line137 CreateLuaTable` 参数落到 `A+2` | `BATTLE_BeforeRoleAction tmp.lua:137 invalid arguments to CreateLuaTable` | 离线回归 `offline_regression_semantic9` 通过；`proto8 pc3` 命中 `skip FR2 arg shift for direct CALL(C=2)`，反汇编确认 `MOV A4<-A0` 恢复 |

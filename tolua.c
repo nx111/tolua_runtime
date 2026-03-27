@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2direct-all";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2revert-e8660fb";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1806,57 +1806,22 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
     BCOp prev1_op = bc_op(prev1);
-    BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
-    int layout_mov_prev2 = 0;
-    int layout_mov_prev1 = 0;
-    int layout_tdup_prev1 = 0;
-
-    TOLUA_REPACK_LOG(ctx, pc,
-                     "skip FR2 arg shift for broad direct CALL(C=2) old=%u base=%u",
-                     (unsigned int)old_first, (unsigned int)base);
-    return TOLUA_BCCONV_OK;
 
     /* Keep one-arg direct passthrough calls as-is:
        MOV arg1<-param; (TGET*|UGET|GGET) func<-param; CALL(C=2).
        Re-shifting this shape can misroute untouched caller params into locals. */
-    layout_mov_prev2 =
-      tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
-      prev2_op == BC_MOV &&
-      bc_a(prev2) == old_first &&
-      (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
-       prev1_op == BC_UGET || prev1_op == BC_GGET) &&
-      bc_a(prev1) == base &&
-      ((prev1_op != BC_TGETS && prev1_op != BC_TGETV && prev1_op != BC_TGETB) ||
-       bc_b(prev1) == bc_d(prev2));
-
-    /* Also keep the mirrored producer layout:
-       (TGET*|UGET|GGET) func<-rx; MOV arg1<-param; CALL(C=2). */
-    layout_mov_prev1 =
-      tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
-      prev1_op == BC_MOV &&
-      bc_a(prev1) == old_first &&
-      (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
-       prev2_op == BC_UGET || prev2_op == BC_GGET) &&
-      bc_a(prev2) == base &&
-      ((prev2_op != BC_TGETS && prev2_op != BC_TGETV && prev2_op != BC_TGETB) ||
-       bc_b(prev2) == base);
-
-    /* Keep direct one-arg calls with local table-literal args as-is:
-       (TGET*|UGET|GGET) func<-rx; TDUP arg1<-k; CALL(C=2). */
-    layout_tdup_prev1 =
-      prev1_op == BC_TDUP &&
-      bc_a(prev1) == old_first &&
-      (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
-       prev2_op == BC_UGET || prev2_op == BC_GGET) &&
-      bc_a(prev2) == base;
-
-    if (layout_mov_prev2 || layout_mov_prev1 || layout_tdup_prev1) {
+    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
+        bc_op(prev2) == BC_MOV &&
+        bc_a(prev2) == old_first &&
+        (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||
+         prev1_op == BC_UGET || prev1_op == BC_GGET) &&
+        bc_a(prev1) == base &&
+        ((prev1_op != BC_TGETS && prev1_op != BC_TGETV && prev1_op != BC_TGETB) ||
+         bc_b(prev1) == bc_d(prev2))) {
       TOLUA_REPACK_LOG(ctx, pc,
                        "skip FR2 arg shift for direct CALL(C=2) old=%u base=%u src=%u",
-                       (unsigned int)old_first, (unsigned int)base,
-                       (unsigned int)(layout_mov_prev2 ? bc_d(prev2) :
-                                      (layout_mov_prev1 ? bc_d(prev1) : bc_b(prev1))));
+                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev2));
       return TOLUA_BCCONV_OK;
     }
   }

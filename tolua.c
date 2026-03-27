@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2revert-e8660fb";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2hybrid-mainbattle";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1806,6 +1806,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
     BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
 
     /* Keep one-arg direct passthrough calls as-is:
@@ -1822,6 +1823,37 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       TOLUA_REPACK_LOG(ctx, pc,
                        "skip FR2 arg shift for direct CALL(C=2) old=%u base=%u src=%u",
                        (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev2));
+      return TOLUA_BCCONV_OK;
+    }
+
+    /* Keep mirrored one-arg direct passthrough calls as-is:
+       (TGET*|UGET|GGET) func<-base; MOV arg1<-param; CALL(C=2). */
+    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
+        prev1_op == BC_MOV &&
+        bc_a(prev1) == old_first &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB ||
+         prev2_op == BC_UGET || prev2_op == BC_GGET) &&
+        bc_a(prev2) == base &&
+        ((prev2_op != BC_TGETS && prev2_op != BC_TGETV && prev2_op != BC_TGETB) ||
+         bc_b(prev2) == base)) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for mirrored direct CALL(C=2) old=%u base=%u src=%u",
+                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev1));
+      return TOLUA_BCCONV_OK;
+    }
+
+    /* Keep table-parent keyed TDUP one-arg calls as-is:
+       TGET* func<-tbl ; TDUP arg1<-k ; CALL(C=2), where tbl != func-reg.
+       This avoids reintroducing List2Map-style argument drift while keeping
+       main.lua self-index shapes (tbl==func-reg) on the e8660fb path. */
+    if (prev1_op == BC_TDUP &&
+        bc_a(prev1) == old_first &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
+        bc_a(prev2) == base &&
+        bc_b(prev2) != base) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for table-parent TDUP CALL(C=2) old=%u base=%u tbl=%u",
+                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_b(prev2));
       return TOLUA_BCCONV_OK;
     }
   }

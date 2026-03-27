@@ -57,7 +57,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c4-callframeshift";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2direct-all";
 
 static void tolua_emitlogv(const char *fmt, va_list argp)
 {
@@ -1811,6 +1811,11 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     int layout_mov_prev2 = 0;
     int layout_mov_prev1 = 0;
     int layout_tdup_prev1 = 0;
+
+    TOLUA_REPACK_LOG(ctx, pc,
+                     "skip FR2 arg shift for broad direct CALL(C=2) old=%u base=%u",
+                     (unsigned int)old_first, (unsigned int)base);
+    return TOLUA_BCCONV_OK;
 
     /* Keep one-arg direct passthrough calls as-is:
        MOV arg1<-param; (TGET*|UGET|GGET) func<-param; CALL(C=2).

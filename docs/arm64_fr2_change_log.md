@@ -1,7 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-
-最后更新：2026-03-27 10:02  
+最后更新：2026-03-27 10:32  
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 
 ## 1. 当前目标
@@ -14,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-03-27 | `待提交` | 禁用 `CALL(B=1,C>=4)` 的 `live-after spill fallback`，改用纯 copy-insert 右移（不做 spill 重写） | `BATTLE_BeforeInitBattle tmp.lua:711 bad argument #1 to insert (table expected, got string)` | 离线日志 `proto19 pc704/727` 由 `live-after spill fallback` 变为 `live-after fallback copy insert`；对应调用窗口不再注入 spill 寄存器链（移除 `MOV A26/A27`），改为纯 `MOV13<-12; MOV12<-11; MOV11<-10` |
 | 2026-03-27 | `待提交` | 移除 `CALL(C=3,B=1)` 与 `CALL(C=4,B=1)` 的“param-pass 直接跳过”规则，统一恢复 FR2 参数右移 | `BATTLE_BeforeInitBattle tmp.lua:2556 field or property Equipment does not exist` | 离线反汇编确认 `proto131 line2705/2707` 从 `MOV A4/A5(/A6)` 调整为 `MOV A5/A6(/A7)`；`proto19 line528` 保持 `MOV A13/A14`；`main/migong` 关键点不回退 |
 | 2026-03-27 | `待提交` | 收窄 `direct CALL(C=3)` 跳过条件：从“仅 arg1 透传”改为“arg1 + arg2 均为透传 seed 才跳过”；其余场景恢复 FR2 右移 | `BATTLE_BeforeRoleAction tmp.lua:528 bad argument #1 to GetEquipment (Role expected, got number)` | 离线反汇编确认 `proto19 line528` 由 `MOV12/MOV13` 调整为 `MOV13/MOV14`；`proto130 line2571` 同步调整为 `MOV11/MOV12`；`proto131 pc234/240` 保持不变 |
 | 2026-03-26 | `待提交` | 收敛 `method-self CALL(C=3)`：由“非 root proto”改为“self/base 回溯到调用者透传 seed 才跳过”；其余 method-self 正常做 FR2 右移 | `migong.lua tmp.lua:29 bad argument #2 to 'byte' (number expected, got table)` | 离线反汇编确认 `proto2 line29` 已从 `MOV16/MOV17` 调整为 `MOV17/MOV18`（参数窗口右移）；battle 关键点 `proto130 pc27/42/107/112` 与 `proto131 pc234/240` 仍保持 |

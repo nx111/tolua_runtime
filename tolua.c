@@ -2387,8 +2387,20 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                        (unsigned int)first_touch_pc, tolua_bc_opname(first_touch_op));
     } else {
       uint32_t copy_count = (uint32_t)(old_last - old_first + 1);
+      BCIns live_consumer_ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+      BCOp live_consumer_op = bc_op(live_consumer_ins);
+      int allow_live_spill_fallback = 1;
 
-      if (!targets[pc] &&
+      if (live_consumer_op == BC_CALL &&
+          bc_b(live_consumer_ins) == 1 &&
+          bc_c(live_consumer_ins) >= 4) {
+        /* Open-result calls with >=3 args are very sensitive to spill rewrites.
+           Prefer plain copy insertion here to preserve vararg/list builders. */
+        allow_live_spill_fallback = 0;
+      }
+
+      if (allow_live_spill_fallback &&
+          !targets[pc] &&
           !tolua_pending_insert_copy.active &&
           first_touch_pc != UINT32_MAX &&
           first_touch_kind[0] == 'r' &&

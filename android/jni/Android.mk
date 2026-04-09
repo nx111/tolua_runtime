@@ -13,6 +13,7 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../
 
 LOCAL_CPPFLAGS := -O2
 LOCAL_CFLAGS :=  -O2 -std=gnu99
+LOCAL_LDFLAGS := -Wl,-z,max-page-size=16384
 LOCAL_LDLIBS := -llog
 LOCAL_SRC_FILES :=	../../tolua.c \
 					../../tolua_fr1_to_fr2.c \

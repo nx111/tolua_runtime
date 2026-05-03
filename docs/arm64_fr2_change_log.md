@@ -13,6 +13,7 @@
 
 | 日期 | Commit | 变更摘要 | 目标问题 | 当前结论 |
 |---|---|---|---|---|
+| 2026-05-03 | `待提交` | 新增 `tools/check_fr1_callc2_tdup.py` 离线门禁，直接解析 SSWS_HG FR1 bytecode，检查 `TGET* + TDUP + CALL(C=2)` 是否命中 List2Map 保护规则；用 NDK r21e 本地重编/同步 arm64 `libtolua.so`，但 so 不纳入提交 | `jygame/battle.lua tmp.lua:64 bad argument #1 to ipairs`，`tmp.lua:169 List2Map` 首报错 | 门禁通过：`battle.lua proto202 line169/241` 均保持受保护形态，最终 FR2 映射为 `CALL A+2`；若额外右移会漂到更高槽位。本地 arm64 so 与 Unity 项目一致，SHA256 `048F1E3E8BAD600B1FE61A4EDCBAD5339D888A78875C7D85DAC2E0ED7642BECD` |
 | 2026-03-27 | `待提交` | `CALL(C=2)` 改为“main+battle 混合窄规则”：保留 `e8660fb` passthrough 主路径；补回 `mirrored MOV` 与 `TGET*(tbl!=base)+TDUP` 两个定向跳过 | 同时满足 `main.lua line10 nil` 不回归 + `battle line137/169/241` 不错位 | 对照确认：`main.lua` 转换产物继续与 `e8660fb` MD5 一致（`d3405e575caac40eff41d2dbb6009c70`）；`battle proto8 line137` 恢复 `MOV A4<-A0`，`proto202 line169/241` 恢复 `TDUP A20`；离线回归通过 |
 | 2026-03-27 | `待提交` | 回退 `CALL(C=2)` 到 `e8660fb` 的窄条件（仅 `MOV arg1<-passthrough + TGET*/UGET/GGET + CALL(C=2)` 跳过右移），移除 broad/镜像/`TDUP` 跳过 | `DoFile failed: jygame/main.lua err: tmp.lua:10: attempt to index a nil value` | 对照同源 `main.lua`：当前转换产物与 `e8660fb` MD5 完全一致（`d3405e575caac40eff41d2dbb6009c70`）；离线回归 `main/battle/migong` 全部 `conversion_failed=0` |
 | 2026-03-27 | `待提交` | 将 `direct CALL(C=2)` 收敛为统一跳过 FR2 参数右移（覆盖 MOV/TDUP 等一参直调形态） | `tmp.lua:64 bad argument #1 to ipairs (table expected, got string)` 与 `line169 List2Map` 参数错位反复 | 离线回归 `offline_regression_semantic11` 通过；`proto202 line169/241` 均保持 `TDUP A20 + CALL A19 C2` |

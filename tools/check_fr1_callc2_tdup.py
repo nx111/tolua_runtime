@@ -20,9 +20,8 @@ It also checks mirrored one-argument passthrough calls like:
   MOV    A=3 B=0
   CALL   A=2 B=4 C=2
 
-In FR2, GGET globals such as ipairs/pairs and Lua table functions such as
-BattleUtil.GetRrevRole must use CALL A+2. The known tolua/C# helper
-LuaTool.CreateLuaTable at line 137 is intentionally kept at CALL A+1.
+In FR2, GGET globals, Lua table functions such as BattleUtil.GetRrevRole,
+and tolua/C# helpers such as LuaTool.CreateLuaTable must use CALL A+2.
 """
 
 from __future__ import annotations
@@ -278,7 +277,7 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
             elif arg.op == "MOV" and func.op in {"TGETS", "TGETV", "TGETB", "UGET", "GGET"} and func.a == call.a:
                 shape = f"{func.op}+MOV+CALL(C=2)"
                 expected_fr1 = call.a + 1
-                expected_fr2 = call.a + 1 if line == 137 else call.a + 2
+                expected_fr2 = call.a + 2
                 mov_hits += 1
             else:
                 continue

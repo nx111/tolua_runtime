@@ -20,9 +20,9 @@ It also checks mirrored one-argument passthrough calls like:
   MOV    A=3 B=0
   CALL   A=2 B=4 C=2
 
-In FR2, GGET globals such as ipairs/pairs must use CALL A+2. TGET* table-field
-calls are intentionally kept at CALL A+1 for tolua/C# bound helpers such as
-LuaTool.CreateLuaTable.
+In FR2, GGET globals such as ipairs/pairs and Lua table functions such as
+BattleUtil.GetRrevRole must use CALL A+2. The known tolua/C# helper
+LuaTool.CreateLuaTable at line 137 is intentionally kept at CALL A+1.
 """
 
 from __future__ import annotations
@@ -269,6 +269,7 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
 
             func = proto.rows[idx - 2]
             arg = proto.rows[idx - 1]
+            line = call.line if call.line is not None else -1
             if arg.op == "TDUP" and func.op in {"TGETS", "TGETV", "TGETB"} and func.a == call.a:
                 shape = f"{func.op}+TDUP+CALL(C=2)"
                 expected_fr1 = call.a + 1
@@ -277,7 +278,7 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
             elif arg.op == "MOV" and func.op in {"TGETS", "TGETV", "TGETB", "UGET", "GGET"} and func.a == call.a:
                 shape = f"{func.op}+MOV+CALL(C=2)"
                 expected_fr1 = call.a + 1
-                expected_fr2 = call.a + 1 if func.op in {"TGETS", "TGETV", "TGETB"} else call.a + 2
+                expected_fr2 = call.a + 1 if line == 137 else call.a + 2
                 mov_hits += 1
             else:
                 continue
@@ -286,7 +287,6 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
             mapped_arg = map_reg(arg.a, holes)
             slot_a1_writer = find_writer(proto.rows, idx, call.a + 1)
             slot_a2_writer = find_writer(proto.rows, idx, call.a + 2)
-            line = call.line if call.line is not None else -1
             if line in require_lines:
                 seen_required.add(line)
             prefix = f"{path.name}: proto={proto.index} pc={call.pc} line={line}"

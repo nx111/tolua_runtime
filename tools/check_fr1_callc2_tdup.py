@@ -36,6 +36,50 @@ LOOP ILOOP JLOOP JMP FUNCF IFUNCF JFUNCF FUNCV IFUNCV JFUNCV FUNCC FUNCCW
 """.split()
 
 
+DEF_A_OPS = {
+    "MOV",
+    "NOT",
+    "UNM",
+    "LEN",
+    "ADDVN",
+    "SUBVN",
+    "MULVN",
+    "DIVVN",
+    "MODVN",
+    "ADDNV",
+    "SUBNV",
+    "MULNV",
+    "DIVNV",
+    "MODNV",
+    "ADDVV",
+    "SUBVV",
+    "MULVV",
+    "DIVVV",
+    "MODVV",
+    "POW",
+    "CAT",
+    "KSTR",
+    "KCDATA",
+    "KSHORT",
+    "KNUM",
+    "KPRI",
+    "KNIL",
+    "UGET",
+    "FNEW",
+    "TNEW",
+    "TDUP",
+    "GGET",
+    "TGETV",
+    "TGETS",
+    "TGETB",
+    "CALLM",
+    "CALL",
+    "ITERC",
+    "ITERN",
+    "VARG",
+}
+
+
 @dataclass
 class Ins:
     pc: int
@@ -180,11 +224,31 @@ def map_reg(reg: int, holes: set[int]) -> int:
     return reg + sum(1 for hole in holes if hole < reg)
 
 
-def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
+def find_writer(rows: list[Ins], before_idx: int, reg: int) -> Ins | None:
+    for idx in range(before_idx - 1, -1, -1):
+        row = rows[idx]
+        if row.a == reg and row.op in DEF_A_OPS:
+            return row
+    return None
+
+
+def describe_writer(row: Ins | None) -> str:
+    if row is None:
+        return "none"
+    line = row.line if row.line is not None else -1
+    return f"pc={row.pc},line={line},{row.op},A={row.a},B={row.b},C={row.c},D={row.d}"
+
+
+def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_layout: str) -> int:
     version = path.read_bytes()[3]
     failures: list[str] = []
     seen_required: set[int] = set()
     hits = 0
+
+    if expect_layout == "fr1" and version != 1:
+        failures.append(f"{path.name}: expected FR1/source bytecode, got version {version}")
+    if expect_layout == "fr2" and version != 2:
+        failures.append(f"{path.name}: expected FR2/converted bytecode, got version {version}")
 
     for proto in parse_chunk(path, lj_ops):
         holes = call_holes(proto.rows)
@@ -202,6 +266,8 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
             hits += 1
             mapped_call = map_reg(call.a, holes)
             mapped_arg = map_reg(arg.a, holes)
+            slot_a1_writer = find_writer(proto.rows, idx, call.a + 1)
+            slot_a2_writer = find_writer(proto.rows, idx, call.a + 2)
             line = call.line if call.line is not None else -1
             if line in require_lines:
                 seen_required.add(line)
@@ -209,7 +275,9 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
 
             print(
                 f"{prefix} {func.op}+TDUP+CALL(C=2) "
-                f"A{call.a}/arg=A{arg.a} mapped=A{mapped_call}/arg=A{mapped_arg}"
+                f"A{call.a}/arg=A{arg.a} mapped=A{mapped_call}/arg=A{mapped_arg} "
+                f"slotA+1={describe_writer(slot_a1_writer)} "
+                f"slotA+2={describe_writer(slot_a2_writer)}"
             )
 
             if version == 1:
@@ -248,11 +316,17 @@ def main() -> int:
         default=[],
         help="Require a protected CALL(C=2) site at this source line.",
     )
+    parser.add_argument(
+        "--expect-layout",
+        choices=("fr1", "fr2", "auto"),
+        default="fr2",
+        help="Expected bytecode layout. Defaults to fr2 so source files do not give false confidence.",
+    )
     args = parser.parse_args()
 
     try:
         lj_ops = read_lj_ops(args.lj_bc)
-        return check_file(args.bytecode, lj_ops, set(args.require_line))
+        return check_file(args.bytecode, lj_ops, set(args.require_line), args.expect_layout)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

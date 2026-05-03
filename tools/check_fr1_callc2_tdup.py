@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Check FR1 LuaJIT bytecode for one-argument table-literal calls that must not
-be shifted as normal FR2 call arguments.
+Check LuaJIT bytecode for one-argument table-literal calls that must be
+shifted to the FR2 argument slot.
 
 This is a narrow offline guard for shapes like:
 
@@ -9,10 +9,10 @@ This is a narrow offline guard for shapes like:
   TDUP   A=20 ...
   CALL   A=19 B=2 C=2
 
-After the final FR2 hole map, the first argument is expected at CALL A+2.
-If the TDUP producer is additionally shifted before that map, the callee sees
-a stale/string value in the expected argument slot. That is the List2Map/ipairs
-failure mode seen in SSWS_HG battle.lua.
+In FR1 bytecode the table literal is at CALL A+1. In FR2 bytecode the first
+argument is at CALL A+2. If a TDUP table literal stays at A+1 after conversion,
+the callee sees the stale frame slot, which is the List2Map/ipairs failure mode
+seen in SSWS_HG battle.lua.
 """
 
 from __future__ import annotations
@@ -101,10 +101,10 @@ def parse_chunk(path: Path, lj_ops: list[str]) -> list[Proto]:
         raise ValueError(f"not a LuaJIT bytecode file: {path}")
 
     version = data[3]
-    if version != 1:
-        raise ValueError(f"expected FR1/uLua bytecode version 1, got {version}")
+    if version not in {1, 2}:
+        raise ValueError(f"expected LuaJIT bytecode version 1 or 2, got {version}")
 
-    op_map = [lj_ops.index(name) for name in ULUA_BC_OPS]
+    op_map = [lj_ops.index(name) for name in ULUA_BC_OPS] if version == 1 else None
     pos = 4
     flags, pos = read_uleb128(data, pos)
     be = bool(flags & 0x01)
@@ -157,7 +157,7 @@ def parse_chunk(path: Path, lj_ops: list[str]) -> list[Proto]:
         for pc in range(numbc):
             raw = read_int(data, bc_pos + pc * 4, 4, be)
             op_raw, a, b, c, d = fields(raw)
-            op_index = op_map[op_raw] if op_raw < len(op_map) else -1
+            op_index = op_map[op_raw] if op_map is not None and op_raw < len(op_map) else op_raw
             op = lj_ops[op_index] if 0 <= op_index < len(lj_ops) else f"OP_{op_raw}"
             line = None
             if line_unit:
@@ -181,7 +181,9 @@ def map_reg(reg: int, holes: set[int]) -> int:
 
 
 def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
+    version = path.read_bytes()[3]
     failures: list[str] = []
+    seen_required: set[int] = set()
     hits = 0
 
     for proto in parse_chunk(path, lj_ops):
@@ -192,42 +194,34 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
 
             func = proto.rows[idx - 2]
             arg = proto.rows[idx - 1]
-            if arg.op != "TDUP" or arg.a != call.a + 1:
+            if arg.op != "TDUP":
                 continue
             if func.op not in {"TGETS", "TGETV", "TGETB"} or func.a != call.a:
                 continue
 
             hits += 1
-            skip_rule_hit = func.b != call.a
             mapped_call = map_reg(call.a, holes)
             mapped_arg = map_reg(arg.a, holes)
-            mapped_arg_if_shifted = map_reg(arg.a + 1, holes)
             line = call.line if call.line is not None else -1
+            if line in require_lines:
+                seen_required.add(line)
             prefix = f"{path.name}: proto={proto.index} pc={call.pc} line={line}"
 
             print(
                 f"{prefix} {func.op}+TDUP+CALL(C=2) "
-                f"old=A{call.a}/arg=A{arg.a} mapped=A{mapped_call}/arg=A{mapped_arg} "
-                f"shifted_arg_would=A{mapped_arg_if_shifted} skip_rule={skip_rule_hit}"
+                f"A{call.a}/arg=A{arg.a} mapped=A{mapped_call}/arg=A{mapped_arg}"
             )
 
-            if not skip_rule_hit:
-                failures.append(f"{prefix}: current table-parent TDUP skip rule would not match")
-            if mapped_arg != mapped_call + 2:
-                failures.append(f"{prefix}: protected final FR2 arg slot is not CALL A+2")
-            if mapped_arg_if_shifted == mapped_call + 2:
-                failures.append(f"{prefix}: shifting TDUP would not be detected as a slot drift")
-            if line in require_lines and not skip_rule_hit:
-                failures.append(f"{prefix}: required line {line} is not protected")
+            if version == 1:
+                if arg.a != call.a + 1:
+                    failures.append(f"{prefix}: FR1 source TDUP is not at CALL A+1")
+            else:
+                if arg.a != call.a + 2:
+                    failures.append(f"{prefix}: FR2 converted TDUP is not at CALL A+2")
 
     for line in sorted(require_lines):
-        if not any(
-            call.line == line
-            for proto in parse_chunk(path, lj_ops)
-            for call in proto.rows
-            if call.op == "CALL" and call.b == 2 and call.c == 2
-        ):
-            failures.append(f"{path.name}: required line {line} has no CALL(C=2) site")
+        if line not in seen_required:
+            failures.append(f"{path.name}: required line {line} has no TGET*+TDUP+CALL(C=2) site")
 
     if hits == 0:
         failures.append(f"{path.name}: no TGET*+TDUP+CALL(C=2) sites found")
@@ -238,7 +232,8 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int]) -> int:
             print(f"  {msg}")
         return 1
 
-    print(f"\nOK: {hits} TGET*+TDUP+CALL(C=2) sites are protected.")
+    layout = "FR1 source" if version == 1 else "FR2 converted"
+    print(f"\nOK: {hits} {layout} TGET*+TDUP+CALL(C=2) sites have the expected argument slot.")
     return 0
 
 

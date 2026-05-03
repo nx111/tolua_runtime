@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260327-c2hybrid-mainbattle-logload";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-tdup-callc2-shift";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -1858,20 +1858,6 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       return TOLUA_BCCONV_OK;
     }
 
-    /* Keep table-parent keyed TDUP one-arg calls as-is:
-       TGET* func<-tbl ; TDUP arg1<-k ; CALL(C=2), where tbl != func-reg.
-       This avoids reintroducing List2Map-style argument drift while keeping
-       main.lua self-index shapes (tbl==func-reg) on the e8660fb path. */
-    if (prev1_op == BC_TDUP &&
-        bc_a(prev1) == old_first &&
-        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
-        bc_a(prev2) == base &&
-        bc_b(prev2) != base) {
-      TOLUA_REPACK_LOG(ctx, pc,
-                       "skip FR2 arg shift for table-parent TDUP CALL(C=2) old=%u base=%u tbl=%u",
-                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_b(prev2));
-      return TOLUA_BCCONV_OK;
-    }
   }
   if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
       old_last == (BCReg)(old_first + 1) && pc >= 3) {

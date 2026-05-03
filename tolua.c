@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-createluatable-only";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-callframe-fr2gap";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -2538,23 +2538,27 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
               old_first == call_arg_first &&
               old_last == call_arg_last &&
               copy_count == (uint32_t)call_nargs &&
-              call_arg_last < BCMAX_A &&
+              (uint32_t)call_arg_last + 2u < BCMAX_A &&
               copy_count + 1 <= TOLUA_MAX_INSERT_COPIES) {
             BCIns shifted_consumer = live_consumer_ins;
             uint32_t frame_count = copy_count + 1;
             BCReg shifted_base = (BCReg)(call_base + 1);
+            BCReg shifted_arg_first = (BCReg)(shifted_base + 2);
+            BCReg shifted_arg_last = (BCReg)(shifted_arg_first + call_nargs - 1);
 
-            for (i = 0; i < frame_count; i++) {
-              uint32_t rev = frame_count - 1 - i;
-              copy_dst[i] = (BCReg)(call_base + rev + 1);
-              copy_src[i] = (BCReg)(call_base + rev);
+            for (i = 0; i < call_nargs; i++) {
+              uint32_t rev = call_nargs - 1 - i;
+              copy_dst[i] = (BCReg)(shifted_arg_first + rev);
+              copy_src[i] = (BCReg)(call_arg_first + rev);
             }
+            copy_dst[call_nargs] = shifted_base;
+            copy_src[call_nargs] = call_base;
 
             if (tolua_schedule_insert_copies(ctx, pc, pc, copy_dst, copy_src, (uint8_t)frame_count)) {
               setbc_a(&shifted_consumer, shifted_base);
               tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)shifted_consumer, be);
 
-              status = tolua_update_framesize_checked(framesize_io, call_arg_last + 1, ctx, pc,
+              status = tolua_update_framesize_checked(framesize_io, shifted_arg_last, ctx, pc,
                                                       shifted_consumer, live_consumer_op);
               free(selected);
               if (status != TOLUA_BCCONV_OK) return status;
@@ -2562,7 +2566,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                "live-after fallback call-frame-shift copy insert base=%u->%u args=[%u,%u]->[%u,%u]",
                                (unsigned int)call_base, (unsigned int)shifted_base,
                                (unsigned int)call_arg_first, (unsigned int)call_arg_last,
-                               (unsigned int)(call_arg_first + 1), (unsigned int)(call_arg_last + 1));
+                               (unsigned int)shifted_arg_first, (unsigned int)shifted_arg_last);
               return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
             }
           }
@@ -3169,13 +3173,13 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
           old_first == call_arg_first &&
           old_last == call_arg_last &&
           (consumer_op_at_pc == BC_CALLT || bc_b(consumer_at_pc) == 1)) {
-        BCReg frame_first = call_base;
-        BCReg frame_last = call_arg_last;
         uint32_t frame_count = 0;
         BCIns shifted_consumer = consumer_at_pc;
         BCReg shifted_base = 0;
+        BCReg shifted_arg_first = 0;
+        BCReg shifted_arg_last = 0;
 
-        if (frame_last >= BCMAX_A) {
+        if ((uint32_t)call_arg_last + 2u >= BCMAX_A) {
           TOLUA_REPACK_LOG(ctx, pc,
                            "copy-fallback skip reason=%s call-frame-shift-overflow base=%u args=%u",
                            reason ? reason : "unknown",
@@ -3183,7 +3187,10 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
           return TOLUA_BCCONV_OK;
         }
 
-        frame_count = (uint32_t)(frame_last - frame_first + 1);
+        shifted_base = (BCReg)(call_base + 1);
+        shifted_arg_first = (BCReg)(shifted_base + 2);
+        shifted_arg_last = (BCReg)(shifted_arg_first + call_nargs - 1);
+        frame_count = (uint32_t)call_nargs + 1u;
         if (frame_count == 0 || frame_count > TOLUA_MAX_INSERT_COPIES) {
           TOLUA_REPACK_LOG(ctx, pc,
                            "copy-fallback skip reason=%s call-frame-shift-count=%u",
@@ -3191,11 +3198,13 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
           return TOLUA_BCCONV_OK;
         }
 
-        for (i = 0; i < frame_count; i++) {
-          uint32_t rev = frame_count - 1 - i;
-          copy_dst[i] = (BCReg)(frame_first + rev + 1);
-          copy_src[i] = (BCReg)(frame_first + rev);
+        for (i = 0; i < call_nargs; i++) {
+          uint32_t rev = call_nargs - 1 - i;
+          copy_dst[i] = (BCReg)(shifted_arg_first + rev);
+          copy_src[i] = (BCReg)(call_arg_first + rev);
         }
+        copy_dst[call_nargs] = shifted_base;
+        copy_src[call_nargs] = call_base;
 
         if (!tolua_schedule_insert_copies(ctx, pc, insert_pc, copy_dst, copy_src, (uint8_t)frame_count)) {
           TOLUA_REPACK_LOG(ctx, pc,
@@ -3204,12 +3213,11 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
           return TOLUA_BCCONV_OK;
         }
 
-        shifted_base = (BCReg)(call_base + 1);
         setbc_a(&shifted_consumer, shifted_base);
         tolua_write_ins(buf + bc_pos + (size_t)pc * 4, (uint32_t)shifted_consumer, be);
         tolua_pending_insert_copy.allow_target_entry = (uint8_t)allow_target_entry;
 
-        status = tolua_update_framesize_checked(framesize_io, frame_last + 1, ctx, pc,
+        status = tolua_update_framesize_checked(framesize_io, shifted_arg_last, ctx, pc,
                                                 shifted_consumer, consumer_op_at_pc);
         if (status != TOLUA_BCCONV_OK) return status;
 
@@ -3219,7 +3227,7 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
                          (unsigned int)insert_pc,
                          (unsigned int)call_base, (unsigned int)shifted_base,
                          (unsigned int)call_arg_first, (unsigned int)call_arg_last,
-                         (unsigned int)(call_arg_first + 1), (unsigned int)(call_arg_last + 1));
+                         (unsigned int)shifted_arg_first, (unsigned int)shifted_arg_last);
         *handled = 1;
         return TOLUA_BCCONV_INTERNAL_INSERT_COPY;
       }

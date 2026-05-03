@@ -2157,6 +2157,17 @@ static int tolua_prepare_proto_bytecode(uint8_t *buf, size_t bc_pos, uint32_t nu
   return TOLUA_BCCONV_OK;
 }
 
+static int tolua_try_repack_call_result_copy(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                             uint32_t producer_pc, BCIns producer,
+                                             uint32_t consumer_pc, int avoid_first, int avoid_last,
+                                             uint8_t *framesize_io,
+                                             const uint8_t *targets, const tolua_bcshift_map *map,
+                                             const tolua_bcdebug_ctx *ctx, int *changed);
+static int tolua_try_repack_iterc(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                  uint32_t pc, uint8_t *framesize_io, const uint8_t *targets,
+                                  const tolua_bcshift_map *map,
+                                  const tolua_bcdebug_ctx *ctx, int *changed);
+
 static int tolua_try_repack_adjacent_call_chain(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                                 uint32_t producer_pc, BCIns producer,
                                                 uint32_t consumer_pc, BCIns consumer,
@@ -5030,6 +5041,10 @@ static int tolua_try_repack_fori(uint8_t *buf, size_t bc_pos, uint32_t numbc, in
   return TOLUA_BCCONV_OK;
 }
 
+static int tolua_collect_proto_holes(const uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
+                                     int remap_v1, int target_fr2, tolua_bcshift_map *map,
+                                     const tolua_bcdebug_ctx *ctx);
+
 static int tolua_try_repack_proto_calls(uint8_t *buf, size_t bc_pos, uint32_t numbc, int be,
                                         uint8_t *framesize_io, const tolua_bcdebug_ctx *ctx)
 {
@@ -7754,9 +7769,7 @@ void tolua_openfixedmap(lua_State *L)
 	lua_rawseti(L, LUA_REGISTRYINDEX, LUA_RIDX_FIXEDMAP);		
 }
 
-//对于下列读取lua 特定文件需要判空报错
-void tolua_openvaluetype(lua_State *L)
-/* Cache the optional Lua-side value type checker in the registry. */
+/* Cache optional Lua-side value type checker in the registry. */
 void tolua_openvaluetype(lua_State *L)
 {
 	lua_getglobal(L, "GetLuaValueType");

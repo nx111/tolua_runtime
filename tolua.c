@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-callc2-mirror-shift";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-callc2-mirror-narrow";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -1839,6 +1839,22 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       TOLUA_REPACK_LOG(ctx, pc,
                        "skip FR2 arg shift for direct CALL(C=2) old=%u base=%u src=%u",
                        (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev2));
+      return TOLUA_BCCONV_OK;
+    }
+
+    /* Keep mirrored one-arg table-field calls as-is:
+       TGET* func<-object; MOV arg1<-param; CALL(C=2).
+       C# bound helpers such as LuaTool.CreateLuaTable expect this layout.
+       Do not apply this to GGET globals: ipairs/pairs need the FR2 A+2 slot. */
+    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
+        prev1_op == BC_MOV &&
+        bc_a(prev1) == old_first &&
+        (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
+        bc_a(prev2) == base &&
+        bc_b(prev2) == base) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for mirrored table-field CALL(C=2) old=%u base=%u src=%u",
+                       (unsigned int)old_first, (unsigned int)base, (unsigned int)bc_d(prev1));
       return TOLUA_BCCONV_OK;
     }
 

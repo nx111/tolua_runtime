@@ -20,8 +20,9 @@ It also checks mirrored one-argument passthrough calls like:
   MOV    A=3 B=0
   CALL   A=2 B=4 C=2
 
-In FR2 the MOV argument must be at CALL A+2. Keeping it at A+1 is the
-List2Map/ipairs failure where the callee reads a stale number/string.
+In FR2, GGET globals such as ipairs/pairs must use CALL A+2. TGET* table-field
+calls are intentionally kept at CALL A+1 for tolua/C# bound helpers such as
+LuaTool.CreateLuaTable.
 """
 
 from __future__ import annotations
@@ -276,7 +277,7 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
             elif arg.op == "MOV" and func.op in {"TGETS", "TGETV", "TGETB", "UGET", "GGET"} and func.a == call.a:
                 shape = f"{func.op}+MOV+CALL(C=2)"
                 expected_fr1 = call.a + 1
-                expected_fr2 = call.a + 2
+                expected_fr2 = call.a + 1 if func.op in {"TGETS", "TGETV", "TGETB"} else call.a + 2
                 mov_hits += 1
             else:
                 continue
@@ -301,8 +302,11 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
                 if arg.a != expected_fr1:
                     failures.append(f"{prefix}: FR1 source {arg.op} is not at CALL A+1")
             else:
-                if arg.a != expected_fr2:
-                    failures.append(f"{prefix}: FR2 converted {arg.op} is not at CALL A+2")
+                should_enforce = arg.op == "TDUP" or line in require_lines or func.op in {"GGET", "UGET"}
+                if should_enforce and arg.a != expected_fr2:
+                    failures.append(
+                        f"{prefix}: FR2 converted {arg.op} is not at CALL A+{expected_fr2 - call.a}"
+                    )
 
     for line in sorted(require_lines):
         if line not in seen_required:

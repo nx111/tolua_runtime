@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Check LuaJIT bytecode for one-argument table-literal calls that must be
-shifted to the FR2 argument slot.
+Check LuaJIT bytecode for one-argument calls that must be shifted to the FR2
+argument slot.
 
 This is a narrow offline guard for shapes like:
 
@@ -13,6 +13,15 @@ In FR1 bytecode the table literal is at CALL A+1. In FR2 bytecode the first
 argument is at CALL A+2. If a TDUP table literal stays at A+1 after conversion,
 the callee sees the stale frame slot, which is the List2Map/ipairs failure mode
 seen in SSWS_HG battle.lua.
+
+It also checks mirrored one-argument passthrough calls like:
+
+  GGET   A=2 ...
+  MOV    A=3 B=0
+  CALL   A=2 B=4 C=2
+
+In FR2 the MOV argument must be at CALL A+2. Keeping it at A+1 is the
+List2Map/ipairs failure where the callee reads a stale number/string.
 """
 
 from __future__ import annotations
@@ -243,7 +252,8 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
     version = path.read_bytes()[3]
     failures: list[str] = []
     seen_required: set[int] = set()
-    hits = 0
+    tdup_hits = 0
+    mov_hits = 0
 
     if expect_layout == "fr1" and version != 1:
         failures.append(f"{path.name}: expected FR1/source bytecode, got version {version}")
@@ -253,17 +263,24 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
     for proto in parse_chunk(path, lj_ops):
         holes = call_holes(proto.rows)
         for idx, call in enumerate(proto.rows):
-            if call.op != "CALL" or call.b != 2 or call.c != 2 or idx < 2:
+            if call.op != "CALL" or call.c != 2 or idx < 2:
                 continue
 
             func = proto.rows[idx - 2]
             arg = proto.rows[idx - 1]
-            if arg.op != "TDUP":
-                continue
-            if func.op not in {"TGETS", "TGETV", "TGETB"} or func.a != call.a:
+            if arg.op == "TDUP" and func.op in {"TGETS", "TGETV", "TGETB"} and func.a == call.a:
+                shape = f"{func.op}+TDUP+CALL(C=2)"
+                expected_fr1 = call.a + 1
+                expected_fr2 = call.a + 2
+                tdup_hits += 1
+            elif arg.op == "MOV" and func.op in {"TGETS", "TGETV", "TGETB", "UGET", "GGET"} and func.a == call.a:
+                shape = f"{func.op}+MOV+CALL(C=2)"
+                expected_fr1 = call.a + 1
+                expected_fr2 = call.a + 2
+                mov_hits += 1
+            else:
                 continue
 
-            hits += 1
             mapped_call = map_reg(call.a, holes)
             mapped_arg = map_reg(arg.a, holes)
             slot_a1_writer = find_writer(proto.rows, idx, call.a + 1)
@@ -274,25 +291,25 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
             prefix = f"{path.name}: proto={proto.index} pc={call.pc} line={line}"
 
             print(
-                f"{prefix} {func.op}+TDUP+CALL(C=2) "
+                f"{prefix} {shape} "
                 f"A{call.a}/arg=A{arg.a} mapped=A{mapped_call}/arg=A{mapped_arg} "
                 f"slotA+1={describe_writer(slot_a1_writer)} "
                 f"slotA+2={describe_writer(slot_a2_writer)}"
             )
 
             if version == 1:
-                if arg.a != call.a + 1:
-                    failures.append(f"{prefix}: FR1 source TDUP is not at CALL A+1")
+                if arg.a != expected_fr1:
+                    failures.append(f"{prefix}: FR1 source {arg.op} is not at CALL A+1")
             else:
-                if arg.a != call.a + 2:
-                    failures.append(f"{prefix}: FR2 converted TDUP is not at CALL A+2")
+                if arg.a != expected_fr2:
+                    failures.append(f"{prefix}: FR2 converted {arg.op} is not at CALL A+2")
 
     for line in sorted(require_lines):
         if line not in seen_required:
-            failures.append(f"{path.name}: required line {line} has no TGET*+TDUP+CALL(C=2) site")
+            failures.append(f"{path.name}: required line {line} has no protected CALL(C=2) site")
 
-    if hits == 0:
-        failures.append(f"{path.name}: no TGET*+TDUP+CALL(C=2) sites found")
+    if tdup_hits == 0 and mov_hits == 0:
+        failures.append(f"{path.name}: no protected one-argument CALL(C=2) sites found")
 
     if failures:
         print("\nFAIL:")
@@ -301,7 +318,10 @@ def check_file(path: Path, lj_ops: list[str], require_lines: set[int], expect_la
         return 1
 
     layout = "FR1 source" if version == 1 else "FR2 converted"
-    print(f"\nOK: {hits} {layout} TGET*+TDUP+CALL(C=2) sites have the expected argument slot.")
+    print(
+        f"\nOK: {tdup_hits} TDUP and {mov_hits} MOV {layout} CALL(C=2) sites "
+        "have the expected argument slot."
+    )
     return 0
 
 

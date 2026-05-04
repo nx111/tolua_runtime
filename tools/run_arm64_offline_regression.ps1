@@ -657,6 +657,120 @@ function Test-AttackLogicRoleValuesLogShift([string]$repoRootWsl, [string]$bytec
     }
 }
 
+function Test-AttackLogicExtendTalentsHasBuffShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 241 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto241 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $badPcs = New-Object System.Collections.Generic.List[int]
+    $goodPcs = New-Object System.Collections.Generic.List[int]
+    $weirdPcs = New-Object System.Collections.Generic.List[string]
+    for ($idx = 5; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+        $i4 = $rows[$idx - 4]
+        $i5 = $rows[$idx - 5]
+
+        if ($c.op -ne 'CALL' -or $c.a -ne 15 -or $c.b -ne 2 -or $c.c -ne 3) {
+            continue
+        }
+        if (-not ($i5.op -eq 'MOV' -and $i5.a -eq 17 -and $i5.d -eq 0)) {
+            continue
+        }
+        if (-not ($i4.op -eq 'TGETS' -and $i4.a -eq 15 -and $i4.b -eq 0 -and $i4.c -eq 28 -and $i4.d -eq 28)) {
+            continue
+        }
+        if (-not ($i3.op -eq 'KSTR' -and $i3.a -eq 18 -and $i3.d -eq 85)) {
+            continue
+        }
+
+        $badMatch = (
+            $i2.op -eq 'MOV' -and $i2.a -eq 18 -and $i2.d -eq 17 -and
+            $i1.op -eq 'MOV' -and $i1.a -eq 17 -and $i1.d -eq 16
+        )
+        if ($badMatch) {
+            $badPcs.Add($c.pc)
+            continue
+        }
+
+        $goodMatch = ($i2.op -eq 'MOV' -and $i2.a -eq 18 -and $i2.d -eq 18 -and
+                      $i1.op -eq 'MOV' -and $i1.a -eq 17 -and $i1.d -eq 17)
+        if ($goodMatch) {
+            $goodPcs.Add($c.pc)
+            continue
+        }
+
+        if ($i2.op -eq 'MOV' -and $i1.op -eq 'MOV') {
+            $weirdPcs.Add("pc=$($c.pc) got=MOVA$($i2.a)<-A$($i2.d);MOVA$($i1.a)<-A$($i1.d)")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $maxBadPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=15\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=15\s+C=67\s+D=3907.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=1\s+C=24\s+D=280.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=16\s+C=31\s+D=4127.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+SUBVN\s+A=16\s+B=16\s+C=10\s+D=4106.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=17\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=2\s+C=3\s+D=515'
+    $maxGoodPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=15\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=15\s+C=67\s+D=3907.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=1\s+C=24\s+D=280.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=17\s+C=31\s+D=4383.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+SUBVN\s+A=17\s+B=17\s+C=10\s+D=4362.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=18\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=2\s+C=3\s+D=515'
+    $maxBadCount = [regex]::Matches($disText, $maxBadPattern).Count
+    $maxGoodCount = [regex]::Matches($disText, $maxGoodPattern).Count
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badPcs.Count -ne 0) {
+        $fails.Add("residual bad extendtalents HasBuff self window at CALL pc=" + ($badPcs -join ','))
+    }
+    if ($weirdPcs.Count -ne 0) {
+        $fails.Add("unexpected extendtalents HasBuff windows: " + ($weirdPcs -join ';'))
+    }
+    if ($goodPcs.Count -eq 0) {
+        $fails.Add("missing corrected extendtalents HasBuff self window")
+    }
+    if ($maxBadCount -ne 0) {
+        $fails.Add("residual bad extendtalents two-arg call window")
+    }
+    if ($maxGoodCount -eq 0) {
+        $fails.Add("missing corrected extendtalents two-arg call window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicTempValueHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -876,6 +990,16 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $extendTalentsHasBuffDis = Join-Path $outAbs "attacklogic.proto241.extendtalents_hasbuff.dis.txt"
+    $extendTalentsHasBuffCheck = Test-AttackLogicExtendTalentsHasBuffShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalentsHasBuffDis
+    $extendTalentsHasBuffFailures = @($extendTalentsHasBuffCheck.failures).Count
+    if (-not $extendTalentsHasBuffCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extendTalentsHasBuffCheck.failures) {
+            Write-Warning "[attacklogic extendtalents hasbuff shape] $msg"
+        }
+    }
+
     $harnessLog = Join-Path $outAbs "attacklogic.tempvalue.log"
     $harnessCheck = Test-AttackLogicTempValueHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $harnessLog
     $harnessFailures = if ($harnessCheck.ok) { 0 } else { 1 }
@@ -918,6 +1042,7 @@ if (Test-Path $attacklogicPath) {
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
         rolevalues_log_fail   = $roleValuesLogFailures
+        extendtalents_shape_fail = $extendTalentsHasBuffFailures
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
         log_path              = $logPath
@@ -946,6 +1071,9 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'rolevalues_log_fail' -and $row.rolevalues_log_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'extendtalents_shape_fail' -and $row.extendtalents_shape_fail -ne 0) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'tempvalue_fail' -and $row.tempvalue_fail -ne 0) {

@@ -580,7 +580,17 @@ static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
       "RuntimeData.Instance.GameMode = 'crazy'\n"
       "AttackLogic_RoleValues(atk_role, def_role, atk_skill)\n"
       "assert(type(atk_role.RoleValues.mingzhongValue) == 'number', 'mingzhongValue=' .. type(atk_role.RoleValues.mingzhongValue))\n"
-      "assert(type(def_role.RoleValues.SubCriticalPercent) == 'number', 'SubCriticalPercent=' .. type(def_role.RoleValues.SubCriticalPercent))\n";
+      "assert(type(def_role.RoleValues.SubCriticalPercent) == 'number', 'SubCriticalPercent=' .. type(def_role.RoleValues.SubCriticalPercent))\n"
+      "prevRoleAtk.workflows.extendTalents1_forAttacker = {}\n"
+      "prevRoleAtk.workflows.extendTalents1_forAttackerReal = {}\n"
+      "prevRoleDef.workflows.extendTalents1_forDefencer = {}\n"
+      "prevRoleDef.workflows.extendTalents1_forDefencerReal = {}\n"
+      "atk_skill.attackResult_Hp = 100\n"
+      "atk_skill.Tiaohe = false\n"
+      "atk_skill.Suit = 1\n"
+      "RuntimeData.Instance.isAttackAnalog = false\n"
+      "AttackLogic_extendTalents(sourceSprite, targetSprite, atk_skill, bf, {})\n"
+      "assert(type(prevRoleAtk.MulDmg) == 'number', 'extendtalents_mul=' .. type(prevRoleAtk.MulDmg))\n";
 
   return dostring(L, harness, "@bcrun_attacklogic_tempvalue_chain");
 }

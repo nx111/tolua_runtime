@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-rolevalues-bflog-self-a365";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-extendtalents-maxcall-p241";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -6159,6 +6159,93 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto365 bf.Log method self fix A16..A21 -> A17..A22");
+    }
+  }
+
+  /* proto241 HasBuff self-clobber window observed after conversion:
+       MOV A17 <- A0; TGETS A15 B=0 C=28 D=28; KSTR A18 D=85;
+       MOV A18 <- A17; MOV A17 <- A16; CALL A15 B2 C3
+     Native GC64 keeps only:
+       MOV A17 <- A0; TGETS A15 B=0 C=28 D=28; KSTR A18 D=85; CALL A15 B2 C3
+     so the two inserted MOVs must become self-copies to preserve the original
+     method self/arg slots without changing surrounding frame layout. */
+  if (ctx != NULL && ctx->proto_index == 241u) {
+    uint32_t p = 0;
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALL || bc_a(c) != 15 || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 17 || bc_d(i1) != 16) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 18 || bc_d(i2) != 17) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 18 || bc_d(i3) != 85) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 15 || bc_b(i4) != 0 || bc_c(i4) != 28 || bc_d(i4) != 28) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 17 || bc_d(i5) != 0) continue;
+
+      setbc_d(&i2, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_d(&i1, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto241 HasBuff self fix MOV A18<-A17/A17<-A16 -> self-copies");
+    }
+  }
+
+  /* proto241 two-arg direct call window observed after conversion:
+       GGET A15; TGETS A15 B=15 C=67 D=3907;
+       TGETS A16 B=1 C=24; TGETS A16 B=16 C=31; SUBVN A16 B=16 C=10;
+       KSHORT A17 D=1; CALL A15 B2 C3
+     Native GC64 keeps the two arguments on A17/A18, leaving A16 as the FR2
+     hole after the function slot:
+       GGET A15; TGETS A15 B=15 C=67 D=3907;
+       TGETS A17 B=1 C=24; TGETS A17 B=17 C=31; SUBVN A17 B=17 C=10;
+       KSHORT A18 D=1; CALL A15 B2 C3 */
+  if (ctx != NULL && ctx->proto_index == 241u) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 15 || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_KSHORT || bc_a(i1) != 17 || bc_d(i1) != 1) continue;
+      if (o2 != BC_SUBVN || bc_a(i2) != 16 || bc_b(i2) != 16 || bc_c(i2) != 10) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 16 || bc_b(i3) != 16 || bc_c(i3) != 31) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 16 || bc_b(i4) != 1 || bc_c(i4) != 24) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 15 || bc_b(i5) != 15 || bc_c(i5) != 67 || bc_d(i5) != 3907) continue;
+      if (o6 != BC_GGET || bc_a(i6) != 15 || bc_d(i6) != 21) continue;
+
+      setbc_a(&i4, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 17);
+      setbc_b(&i3, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 17);
+      setbc_b(&i2, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 18, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto241 two-arg call fix A16/A17 -> A17/A18");
     }
   }
 

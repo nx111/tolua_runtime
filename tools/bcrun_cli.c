@@ -70,6 +70,34 @@ static int pcall_trace(lua_State *L, int nargs, int nresults)
   return status;
 }
 
+static int run_bytecode_file(lua_State *L, const char *input)
+{
+  size_t input_size = 0;
+  uint8_t *input_buf = read_file(input, &input_size);
+  int status = 0;
+
+  if (!input_buf) {
+    fprintf(stderr, "read failed: %s (%s)\n", input, strerror(errno));
+    return 1;
+  }
+
+  status = luaL_loadbuffer(L, (const char *)input_buf, input_size, "@tmp.lua");
+  if (status == 0) status = pcall_trace(L, 0, 0);
+  if (status != 0) {
+    const char *errmsg = lua_tostring(L, -1);
+    fprintf(stderr, "run failed: %s\n", errmsg);
+    if (errmsg != NULL && strstr(errmsg, "incompatible bytecode") != NULL) {
+      fprintf(stderr,
+              "hint: incompatible bytecode usually means runtime/build mismatch.\n"
+              "hint: rebuild offline tools with LUAJIT_ENABLE_GC64 and run via WSL gc64 toolchain.\n");
+    }
+    lua_pop(L, 1);
+  }
+
+  free(input_buf);
+  return status;
+}
+
 static int run_getrrevrole_harness(lua_State *L)
 {
   const char *harness =
@@ -259,10 +287,266 @@ static int run_installyinjian_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_installyinjian");
 }
 
+static int run_battle_rest_harness(lua_State *L)
+{
+  const char *harness =
+      "local function list(items)\n"
+      "  local t = { Count = #items, Length = #items, __items = items, __create_lua_table_ok = true }\n"
+      "  for i = 1, #items do t[i - 1] = items[i] end\n"
+      "  return t\n"
+      "end\n"
+      "local function zero_list() return list({}) end\n"
+      "function LuaTool.CreateLuaTable(v)\n"
+      "  assert(type(v) == 'table' and v.__create_lua_table_ok, 'CreateLuaTable arg=' .. type(v) .. ' value=' .. tostring(v))\n"
+      "  local out = {}\n"
+      "  for i = 1, #v.__items do out[i] = v.__items[i] end\n"
+      "  return out\n"
+      "end\n"
+      "BattleFieldMonitor.getInstance = function()\n"
+      "  return { helpResetAllSkills = function() return nil end, helpChangeAttribute = function() end, GetAddMaxMp = function() return 0 end }\n"
+      "end\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "local talent_map = { ['淫娃荡妇'] = true }\n"
+      "local role = {\n"
+      "  Name = 'offline-role', Key = 'offline-key', Level = 10,\n"
+      "  Attributes = { female = 0, gengu = 0 }, AttributesFinal = { gengu = 0, wuxing = 0 },\n"
+      "  Talents = list({ '淫娃荡妇' }), InternalSkills = zero_list(), Skills = zero_list(), SpecialSkills = zero_list(), EquipmentTalents = zero_list()\n"
+      "}\n"
+      "function role:GetEquipment() return nil end\n"
+      "function role:HasTalent(name) return talent_map[name] or false end\n"
+      "function role:RemoveTalent(name) talent_map[name] = nil end\n"
+      "function role:AddTalent(name) talent_map[name] = true end\n"
+      "local bf = { BattleTimestamp = 1, SpritesTable = {} }\n"
+      "function bf:Log() end\n"
+      "local sprite = {\n"
+      "  ParentBattleField = bf, Role = role, Team = 1, Name = 'offline-sprite',\n"
+      "  X = 3, Y = 4, Hp = 60, MaxHp = 100, Mp = 20, MaxMp = 50, Balls = 0, Sp = 0\n"
+      "}\n"
+      "function sprite:HasBuff() return false end\n"
+      "function sprite:DeleteBuff() end\n"
+      "function sprite:GetBuff() return { Level = 0, LeftRound = 0, Leftround = 0 } end\n"
+      "function sprite:Set_needRefresh() end\n"
+      "function sprite:SkillCdRecover() end\n"
+      "function sprite:AddBuff() end\n"
+      "function sprite:AddBuffOnly2() end\n"
+      "function sprite:Say() end\n"
+      "role.Sprite = sprite\n"
+      "bf.SpritesTable = { sprite }\n"
+      "assert(type(BattleUtil.PrevWorkflows) == 'table', 'PrevWorkflows missing')\n"
+      "assert(type(BattleUtil.PrevWorkflows['Rest_forTalent']) == 'table', 'Rest_forTalent=' .. type(BattleUtil.PrevWorkflows['Rest_forTalent']))\n"
+      "assert(BattleUtil.PrevWorkflows['Rest_forTalent'].name == 'Rest', 'Rest_forTalent.name=' .. tostring(BattleUtil.PrevWorkflows['Rest_forTalent'].name))\n"
+      "BattleUtil.RegisterPrevRole(bf, role, sprite)\n"
+      "local prev = BattleUtil.PrevRoles[sprite]\n"
+      "assert(type(prev) == 'table', 'PrevRoles entry missing')\n"
+      "assert(type(prev.workflows) == 'table', 'prev.workflows missing')\n"
+      "assert(type(prev.workflows.Rest) == 'table', 'prev.workflows.Rest=' .. type(prev.workflows.Rest))\n"
+      "assert(#prev.workflows.Rest >= 1, 'prev.workflows.Rest count=' .. tostring(#prev.workflows.Rest))\n"
+      "local ret = BATTLE_Rest(bf, sprite, 10, 20)\n"
+      "local expected_hp = 10 + math.ceil((sprite.MaxHp - sprite.Hp) * 0.1)\n"
+      "assert(prev.AddHp == expected_hp, 'prev.AddHp=' .. tostring(prev.AddHp))\n"
+      "assert(prev.AddMp == 20, 'prev.AddMp=' .. tostring(prev.AddMp))\n"
+      "assert(ret == string.format('%s,%s', expected_hp, 20), 'ret=' .. tostring(ret))\n";
+
+  return dostring(L, harness, "@bcrun_battle_rest");
+}
+
+static int run_attacklogic_tempvalue_harness(lua_State *L)
+{
+  const char *harness =
+      "local function count_keys(t)\n"
+      "  local n = 0\n"
+      "  for _ in pairs(t) do n = n + 1 end\n"
+      "  return n\n"
+      "end\n"
+      "local function join_keys(t)\n"
+      "  local out = {}\n"
+      "  for k in pairs(t) do out[#out + 1] = tostring(k) end\n"
+      "  table.sort(out)\n"
+      "  return table.concat(out, ',')\n"
+      "end\n"
+      "local function assert_talent_flow(key, flow_name, expected_count)\n"
+      "  local wf = BattleUtil.PrevWorkflows[key]\n"
+      "  assert(type(wf) == 'table', key .. '=' .. type(wf) .. ' keys=' .. join_keys(BattleUtil.PrevWorkflows))\n"
+      "  assert(wf.name == flow_name, key .. '.name=' .. tostring(wf.name))\n"
+      "  assert(type(wf.talents) == 'table', key .. '.talents=' .. type(wf.talents))\n"
+      "  assert(#wf.talents == expected_count, key .. '.talents.count=' .. tostring(#wf.talents))\n"
+      "  assert(type(wf.callbacks) == 'table', key .. '.callbacks=' .. type(wf.callbacks))\n"
+      "  for _, talent in ipairs(wf.talents) do\n"
+      "    assert(type(wf.callbacks[talent]) == 'function', key .. '.callback[' .. tostring(talent) .. ']=' .. type(wf.callbacks[talent]))\n"
+      "  end\n"
+      "end\n"
+      "assert(type(BattleUtil) == 'table', 'BattleUtil=' .. type(BattleUtil))\n"
+      "assert(type(BattleUtil.PrevWorkflows) == 'table', 'PrevWorkflows=' .. type(BattleUtil.PrevWorkflows))\n"
+      "assert(count_keys(BattleUtil.PrevWorkflows) > 0, 'PrevWorkflows empty')\n"
+      "assert_talent_flow('extendTalents2_forAttackerTempValue_forTalent', 'extendTalents2_forAttackerTempValue', 2)\n"
+      "assert_talent_flow('extendTalents2_forDefencerTempValue_forTalent', 'extendTalents2_forDefencerTempValue', 2)\n";
+
+  return dostring(L, harness, "@bcrun_attacklogic_tempvalue");
+}
+
+static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
+{
+  const char *harness =
+      "local function list(items)\n"
+      "  local t = { Count = #items, Length = #items, __items = items, __create_lua_table_ok = true }\n"
+      "  for i = 1, #items do t[i - 1] = items[i] end\n"
+      "  return t\n"
+      "end\n"
+      "local function zero_list() return list({}) end\n"
+      "local function assert_nonempty(name, value)\n"
+      "  assert(type(value) == 'table' and next(value) ~= nil, name .. '=' .. type(value))\n"
+      "end\n"
+      "local function filter_keys(t, needles)\n"
+      "  local out = {}\n"
+      "  if type(t) ~= 'table' then return '' end\n"
+      "  for k, _ in pairs(t) do\n"
+      "    local s = tostring(k)\n"
+      "    for _, needle in ipairs(needles) do\n"
+      "      if string.find(s, needle, 1, true) then out[#out + 1] = s break end\n"
+      "    end\n"
+      "  end\n"
+      "  table.sort(out)\n"
+      "  return table.concat(out, '|')\n"
+      "end\n"
+      "local function make_internal_skill(name)\n"
+      "  return {\n"
+      "    Name = name,\n"
+      "    Level = 1,\n"
+      "    IsUsed = true,\n"
+      "    Talents = zero_list(),\n"
+      "    UniqueSkills = zero_list(),\n"
+      "    InternalSkill = { Triggers = zero_list(), UniqueSkills = zero_list() }\n"
+      "  }\n"
+      "end\n"
+      "local function make_skill(name)\n"
+      "  return {\n"
+      "    Name = name,\n"
+      "    name = name,\n"
+      "    Level = 1,\n"
+      "    IsUsed = true,\n"
+      "    Talents = zero_list(),\n"
+      "    UniqueSkills = zero_list(),\n"
+      "    Type = 1,\n"
+      "    Skill = {\n"
+      "      Triggers = zero_list(),\n"
+      "      UniqueSkills = zero_list(),\n"
+      "      CastSize = 1,\n"
+      "      CoverSize = 1,\n"
+      "      GetCastSize = function() return 1 end,\n"
+      "      GetCoverSize = function() return 1 end\n"
+      "    },\n"
+      "    SkillType = { GetHashCode = function() return 1 end },\n"
+      "    IsAoyi = false,\n"
+      "    IsUnique = false,\n"
+      "    IsSpecial = false,\n"
+      "    HitSelf = false,\n"
+      "    CurrentCd = 0\n"
+      "  }\n"
+      "end\n"
+      "local function make_role(name, key, talent_names, female)\n"
+      "  local talent_map = {}\n"
+      "  for _, talent in ipairs(talent_names) do talent_map[talent] = true end\n"
+      "  local skill = make_skill('offline-skill')\n"
+      "  local role = {\n"
+      "    Name = name,\n"
+      "    Key = key,\n"
+      "    Level = 10,\n"
+      "    level = 10,\n"
+      "    Attributes = { female = female or 0, gengu = 0, wuxing = 0 },\n"
+      "    AttributesFinal = { gengu = 0, wuxing = 0 },\n"
+      "    Talents = list(talent_names),\n"
+      "    EquipmentTalents = zero_list(),\n"
+      "    InternalSkills = zero_list(),\n"
+      "    Skills = list({ skill }),\n"
+      "    SpecialSkills = zero_list(),\n"
+      "    EquippedInternalSkill = make_internal_skill('offline-internal'),\n"
+      "    HiddenWeapon = ''\n"
+      "  }\n"
+      "  function role:GetEquipment() return nil end\n"
+      "  function role:HasTalent(talent) return talent_map[talent] or false end\n"
+      "  return role, skill\n"
+      "end\n"
+      "function LuaTool.CreateLuaTable(v)\n"
+      "  assert(type(v) == 'table' and v.__create_lua_table_ok, 'CreateLuaTable arg=' .. type(v) .. ' value=' .. tostring(v))\n"
+      "  local out = {}\n"
+      "  for i = 1, #v.__items do out[i] = v.__items[i] end\n"
+      "  return out\n"
+      "end\n"
+      "BattleFieldMonitor.getInstance = function()\n"
+      "  return { helpResetAllSkills = function() return nil end, helpChangeAttribute = function() end, GetAddMaxMp = function() return 0 end }\n"
+      "end\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "RuntimeData.Instance.isAttackAnalog = false\n"
+      "BattleUtil.FlagLianji = BattleUtil.FlagLianji or {}\n"
+      "BattleUtil.isFanji = false\n"
+      "BattleUtil.DoDirectDamage = function() end\n"
+      "local bf = { BattleTimestamp = 1, SpritesTable = {} }\n"
+      "function bf:Log() end\n"
+      "local atk_role, atk_skill = make_role('atk-role', 'atk-key', { '奇招怪式', '孤独求败' }, 0)\n"
+      "local def_role = make_role('def-role', 'def-key', { '斗转星移', '心心相印' }, 1)\n"
+      "local function make_sprite(role, team)\n"
+      "  local sprite = {\n"
+      "    ParentBattleField = bf,\n"
+      "    Role = role,\n"
+      "    Team = team,\n"
+      "    Name = role.Name,\n"
+      "    X = 3,\n"
+      "    Y = team,\n"
+      "    Hp = 100,\n"
+      "    MaxHp = 100,\n"
+      "    Mp = 50,\n"
+      "    MaxMp = 50,\n"
+      "    Balls = 0,\n"
+      "    Sp = 0\n"
+      "  }\n"
+      "  function sprite:HasBuff() return false end\n"
+      "  function sprite:DeleteBuff() end\n"
+      "  function sprite:GetBuff() return nil end\n"
+      "  function sprite:Set_needRefresh() end\n"
+      "  function sprite:SkillCdRecover() end\n"
+      "  function sprite:AddBuff() end\n"
+      "  function sprite:AddBuffOnly2() end\n"
+      "  function sprite:Say() end\n"
+      "  return sprite\n"
+      "end\n"
+      "local sourceSprite = make_sprite(atk_role, 1)\n"
+      "local targetSprite = make_sprite(def_role, 2)\n"
+      "atk_role.Sprite = sourceSprite\n"
+      "def_role.Sprite = targetSprite\n"
+      "bf.SpritesTable = { sourceSprite, targetSprite }\n"
+      "BattleUtil.RegisterPrevRole(bf, atk_role, sourceSprite)\n"
+      "BattleUtil.RegisterPrevRole(bf, def_role, targetSprite)\n"
+      "local prevRoleAtk = BattleUtil.PrevRoles[sourceSprite]\n"
+      "local prevRoleDef = BattleUtil.PrevRoles[targetSprite]\n"
+      "assert(type(prevRoleAtk) == 'table', 'prevRoleAtk=' .. type(prevRoleAtk))\n"
+      "assert(type(prevRoleDef) == 'table', 'prevRoleDef=' .. type(prevRoleDef))\n"
+      "assert(type(prevRoleAtk.workflows) == 'table', 'prevRoleAtk.workflows=' .. type(prevRoleAtk.workflows))\n"
+      "assert(type(prevRoleDef.workflows) == 'table', 'prevRoleDef.workflows=' .. type(prevRoleDef.workflows))\n"
+      "assert_nonempty('attacker_temp', prevRoleAtk.workflows.extendTalents2_forAttackerTempValue)\n"
+      "assert_nonempty('defencer_temp', prevRoleDef.workflows.extendTalents2_forDefencerTempValue)\n"
+      "assert(type(prevRoleAtk.workflows.extendTalents2_forAttacker) == 'table', 'attacker=' .. type(prevRoleAtk.workflows.extendTalents2_forAttacker))\n"
+      "assert(type(prevRoleDef.workflows.extendTalents2_forDefencer) == 'table', 'defencer=' .. type(prevRoleDef.workflows.extendTalents2_forDefencer))\n"
+      "if not (type(prevRoleAtk.workflows.extendTalents3_forAttacker) == 'table' and next(prevRoleAtk.workflows.extendTalents3_forAttacker) ~= nil) then\n"
+      "  error('attacker3=' .. type(prevRoleAtk.workflows.extendTalents3_forAttacker) .. ' atk=' .. filter_keys(prevRoleAtk.workflows, {'extendTalents3'}) .. ' prev=' .. filter_keys(BattleUtil.PrevWorkflows or {}, {'extendTalents3', '奇招怪式', '心心相印'}))\n"
+      "end\n"
+      "if not (type(prevRoleDef.workflows.extendTalents3_forDefencer) == 'table' and next(prevRoleDef.workflows.extendTalents3_forDefencer) ~= nil) then\n"
+      "  error('defencer3=' .. type(prevRoleDef.workflows.extendTalents3_forDefencer) .. ' def=' .. filter_keys(prevRoleDef.workflows, {'extendTalents3'}) .. ' prev=' .. filter_keys(BattleUtil.PrevWorkflows or {}, {'extendTalents3', '斗转星移', '心心相印'}))\n"
+      "end\n";
+
+  return dostring(L, harness, "@bcrun_attacklogic_tempvalue_chain");
+}
+
 int main(int argc, char **argv)
 {
   const char *input = NULL;
   const char *mode = NULL;
+  const char *extra_input = NULL;
   const char *prelude =
       "local raw_ipairs = ipairs\n"
       "function ipairs(v)\n"
@@ -306,6 +590,56 @@ int main(int argc, char **argv)
       "LuaTool = luanet.import_type('JyGame.LuaTool')\n"
       "function LuaTool.CreateLuaTable(v) return v end\n"
       "function LuaTool.MakeStringArray(v) return v end\n"
+      "BattleUtil = {\n"
+      "  PrevWorkflows = {}, PrevTalents = {}, PrevTalentMap = {},\n"
+      "  PrevRoleTalents = {}, PrevRoleTalentMap = {}\n"
+      "}\n"
+      "function BattleUtil.List2Map(l)\n"
+      "  local ret = {}\n"
+      "  for i, v in ipairs(l) do ret[v] = i end\n"
+      "  return ret\n"
+      "end\n"
+      "function BattleUtil.RegisterTalent(talent, isRoleOnly)\n"
+      "  local list = isRoleOnly and BattleUtil.PrevRoleTalents or BattleUtil.PrevTalents\n"
+      "  local map = isRoleOnly and BattleUtil.PrevRoleTalentMap or BattleUtil.PrevTalentMap\n"
+      "  if not map[talent] then\n"
+      "    list[#list + 1] = talent\n"
+      "    map[talent] = #list\n"
+      "  end\n"
+      "end\n"
+      "function BattleUtil.RegisterWorkflowForTalent(flowName, talent, isRoleOnly, callback)\n"
+      "  BattleUtil.RegisterTalent(talent, isRoleOnly)\n"
+      "  local key = tostring(flowName) .. '_forTalent'\n"
+      "  local wf = BattleUtil.PrevWorkflows[key]\n"
+      "  if not wf then\n"
+      "    wf = { flowType = 'talent', name = flowName, talentMap = {}, talents = {}, callbacks = {} }\n"
+      "    BattleUtil.PrevWorkflows[key] = wf\n"
+      "  end\n"
+      "  if wf.talentMap[talent] then return end\n"
+      "  wf.talentMap[talent] = true\n"
+      "  wf.talents[#wf.talents + 1] = talent\n"
+      "  wf.callbacks[talent] = callback\n"
+      "end\n"
+      "function BattleUtil.GetWorkflowForTalent(flowName)\n"
+      "  return BattleUtil.PrevWorkflows[tostring(flowName) .. '_forTalent']\n"
+      "end\n"
+      "function BattleUtil.RegisterWorkflowForSkills(flowName, skills, callback, talent, isRoleOnly)\n"
+      "  if talent ~= nil then BattleUtil.RegisterTalent(talent, isRoleOnly) end\n"
+      "  local key = tostring(flowName) .. '_forSkill'\n"
+      "  local wf = BattleUtil.PrevWorkflows[key]\n"
+      "  if not wf then\n"
+      "    wf = { flowType = 'skill', name = flowName, skills = {} }\n"
+      "    BattleUtil.PrevWorkflows[key] = wf\n"
+      "  end\n"
+      "  for _, skillName in ipairs(skills) do\n"
+      "    if not wf.skills[skillName] then wf.skills[skillName] = {} end\n"
+      "    wf.skills[skillName][#wf.skills[skillName] + 1] = { callback = callback, talent = talent }\n"
+      "  end\n"
+      "end\n"
+      "function BattleUtil.GetWorkflowForSkill(flowName, skillName)\n"
+      "  local wf = BattleUtil.PrevWorkflows[tostring(flowName) .. '_forSkill']\n"
+      "  return wf and wf.skills[skillName] or nil\n"
+      "end\n"
       "BattleFieldMonitor = luanet.import_type('JygameSpecialLib.BattleFieldMonitor')\n"
       "RuntimeData = luanet.import_type('JyGame.RuntimeData')\n"
       "ModData = luanet.import_type('JyGame.ModData')\n"
@@ -317,52 +651,39 @@ int main(int argc, char **argv)
       "ResourceStrings = { ResStrings = setmetatable({}, { __index = function(_, k) return tostring(k) end }) }\n"
       "_G.TRIGGER_LUA_MASK = '2022-09-01-FLAG'\n"
       "_G.MAIN_LUA_MASK = '2022-09-01-FLAG'\n";
-  size_t input_size = 0;
-  uint8_t *input_buf = NULL;
   lua_State *L = NULL;
   int status = 0;
 
-  if (argc != 2 && argc != 3) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|installyinjian]\n", argv[0]);
+  if (argc != 2 && argc != 3 && argc != 4) {
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|installyinjian|battle_rest|attacklogic_tempvalue|attacklogic_tempvalue_chain] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
   input = argv[1];
-  mode = argc == 3 ? argv[2] : NULL;
-  input_buf = read_file(input, &input_size);
-  if (!input_buf) {
-    fprintf(stderr, "read failed: %s (%s)\n", input, strerror(errno));
-    return 1;
-  }
+  mode = argc >= 3 ? argv[2] : NULL;
+  if (argc == 4) extra_input = argv[3];
 
   L = luaL_newstate();
   if (!L) {
     fprintf(stderr, "luaL_newstate failed\n");
-    free(input_buf);
     return 1;
   }
 
   luaL_openlibs(L);
   if (dostring(L, prelude, "@bcrun_prelude")) {
     lua_close(L);
-    free(input_buf);
     return 1;
   }
 
-  status = luaL_loadbuffer(L, (const char *)input_buf, input_size, "@tmp.lua");
-  if (status == 0) status = pcall_trace(L, 0, 0);
-  if (status != 0) {
-    const char *errmsg = lua_tostring(L, -1);
-    fprintf(stderr, "run failed: %s\n", errmsg);
-    if (errmsg != NULL && strstr(errmsg, "incompatible bytecode") != NULL) {
-      fprintf(stderr,
-              "hint: incompatible bytecode usually means runtime/build mismatch.\n"
-              "hint: rebuild offline tools with LUAJIT_ENABLE_GC64 and run via WSL gc64 toolchain.\n");
-    }
-    lua_pop(L, 1);
-    if (mode == NULL) {
+  status = run_bytecode_file(L, input);
+  if (status != 0 && mode == NULL) {
+    lua_close(L);
+    return 1;
+  }
+  if (extra_input != NULL) {
+    status = run_bytecode_file(L, extra_input);
+    if (status != 0 && mode == NULL) {
       lua_close(L);
-      free(input_buf);
       return 1;
     }
   }
@@ -371,13 +692,22 @@ int main(int argc, char **argv)
       (strcmp(mode, "getrrevrole") == 0 ||
        strcmp(mode, "registerprevrole") == 0 ||
        strcmp(mode, "checktrigger") == 0 ||
-       strcmp(mode, "installyinjian") == 0)) {
+       strcmp(mode, "installyinjian") == 0 ||
+       strcmp(mode, "battle_rest") == 0 ||
+       strcmp(mode, "attacklogic_tempvalue") == 0 ||
+       strcmp(mode, "attacklogic_tempvalue_chain") == 0)) {
     if (strcmp(mode, "getrrevrole") == 0) {
       status = run_getrrevrole_harness(L);
     } else if (strcmp(mode, "registerprevrole") == 0) {
       status = run_registerprevrole_trigger_harness(L);
     } else if (strcmp(mode, "installyinjian") == 0) {
       status = run_installyinjian_harness(L);
+    } else if (strcmp(mode, "battle_rest") == 0) {
+      status = run_battle_rest_harness(L);
+    } else if (strcmp(mode, "attacklogic_tempvalue_chain") == 0) {
+      status = run_attacklogic_tempvalue_chain_harness(L);
+    } else if (strcmp(mode, "attacklogic_tempvalue") == 0) {
+      status = run_attacklogic_tempvalue_harness(L);
     } else {
       status = run_checktrigger_harness(L);
     }
@@ -387,6 +717,5 @@ int main(int argc, char **argv)
   }
 
   lua_close(L);
-  free(input_buf);
   return status == 0 ? 0 : 1;
 }

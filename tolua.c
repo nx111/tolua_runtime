@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-proto19-directcall-windows";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-attacklogic-extend3-a36c5";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -5636,6 +5636,290 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
       }
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto19 caller535 direct CALL window fix MOV/TGETS/TGETV A17/A18 -> A18/A19");
+      break;
+    }
+
+    /* proto19 direct two-arg table.insert window:
+       GGET A19; TGETS A19; TGETS A20<-A5; TGETS A21<-A13[name];
+       TGETV A20<-A20[A21]; TGETS A21<-A13[callbacks]; TGETV A21<-A21[A18];
+       CALL A19 C3.
+       Native GC64 keeps the two argument carriers on A21/A22, leaving A20 as
+       the FR2 hole after the function slot. */
+    for (p = 7; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7);
+
+      if (cop != BC_CALL || bc_a(c) != 19 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_TGETV || bc_a(i1) != 21 || bc_b(i1) != 21 || bc_c(i1) != 18) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 21 || bc_b(i2) != 13 || bc_c(i2) != 118) continue;
+      if (o3 != BC_TGETV || bc_a(i3) != 20 || bc_b(i3) != 20 || bc_c(i3) != 21) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 21 || bc_b(i4) != 13 || bc_c(i4) != 117) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 20 || bc_b(i5) != 5 || bc_c(i5) != 15) continue;
+      if (o6 != BC_TGETS || bc_a(i6) != 19 || bc_b(i6) != 19 || bc_c(i6) != 48) continue;
+      if (o7 != BC_GGET || bc_a(i7) != 19 || bc_d(i7) != 47) continue;
+
+      setbc_a(&i5, 21);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i4, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 21);
+      setbc_b(&i3, 21);
+      setbc_c(&i3, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 22);
+      setbc_b(&i1, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 22, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto19 direct table.insert window fix A20/A21 -> A21/A22");
+      break;
+    }
+  }
+
+  /* Root proto direct four-arg registration calls that still remain in FR1
+     layout:
+       TGETS A29; KSTR A30; KSTR A31; KPRI A32; FNEW A33; CALL A29 C5
+     The native GC64 layout for this shape leaves A30 as a hole and places the
+     four argument carriers on A31..A34. Keep the fix strictly shape-based. */
+  if (ctx != NULL && ctx->proto_index == 202u) {
+    uint32_t p = 0;
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALL || bc_a(c) != 29 || bc_b(c) != 1 || bc_c(c) != 5) continue;
+      if (o1 != BC_FNEW || bc_a(i1) != 33) continue;
+      if (o2 != BC_KPRI || bc_a(i2) != 32) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 31) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 30) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 29 || bc_b(i5) != 18 || bc_c(i5) != 48) continue;
+
+      setbc_a(&i4, 31);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 32);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 33);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 34);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 34, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto202 direct C5 registration fix KSTR/KPRI/FNEW A30..A33 -> A31..A34");
+    }
+  }
+
+  /* proto389 root extendTalents2_forDefencer registration windows observed
+     after conversion:
+       GGET A36; TGETS A36 D=9265; KSTR A37 D=657; KSTR A38 <talent>; KPRI A39; FNEW A40; CALL A36 C5
+     The shared first string constant D=657 identifies the current
+     extendTalents2_forDefencer root registration block. In GC64/FR2 the four
+     argument carriers must sit on A38..A41, leaving A37 as the hole after the
+     function slot. Keep this fix strictly shape-based on the current erroneous
+     window, not on function names. */
+  if (ctx != NULL && ctx->proto_index == 389u) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 36 || bc_b(c) != 1 || bc_c(c) != 5) continue;
+      if (o1 != BC_FNEW || bc_a(i1) != 40) continue;
+      if (o2 != BC_KPRI || bc_a(i2) != 39) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 38) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 37 || bc_d(i4) != 657) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 36 || bc_b(i5) != 36 || bc_c(i5) != 49) continue;
+      if (o6 != BC_GGET || bc_a(i6) != 36 || bc_d(i6) != 34) continue;
+
+      setbc_a(&i4, 38);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 39);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 40);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 41);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 41, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto389 defencer root C5 fix KSTR/KPRI/FNEW A37..A40 -> A38..A41 flow=D657");
+    }
+  }
+
+  /* proto389 root tempvalue registration windows observed after conversion:
+       GGET A36; TGETS A36 D=9265; KSTR A37; KSTR A38; KPRI A39; FNEW A40; CALL A36 C5
+     These four exact windows populate the AttackLogic tempvalue talent flows.
+     In GC64/FR2 the four argument carriers must sit on A38..A41, leaving A37
+     as the hole after the function slot. Keep this fix strictly shape-based on
+     the current erroneous window, not on function names. */
+  if (ctx != NULL && ctx->proto_index == 389u) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+      int matched = 0;
+
+      if (cop != BC_CALL || bc_a(c) != 36 || bc_b(c) != 1 || bc_c(c) != 5) continue;
+      if (o1 != BC_FNEW || bc_a(i1) != 40) continue;
+      if (o2 != BC_KPRI || bc_a(i2) != 39 || bc_d(i2) != 1) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 38) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 37) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 36 || bc_b(i5) != 36 || bc_c(i5) != 49) continue;
+      if (o6 != BC_GGET || bc_a(i6) != 36 || bc_d(i6) != 34) continue;
+
+      matched =
+          (bc_d(i4) == 718 && bc_d(i3) == 719 && bc_d(i1) == 720) ||
+          (bc_d(i4) == 718 && bc_d(i3) == 721 && bc_d(i1) == 722) ||
+          (bc_d(i4) == 723 && bc_d(i3) == 719 && bc_d(i1) == 724) ||
+          (bc_d(i4) == 723 && bc_d(i3) == 712 && bc_d(i1) == 725);
+      if (!matched) continue;
+
+      setbc_a(&i4, 38);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 39);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 40);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 41);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 41, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto389 tempvalue root C5 fix KSTR/KPRI/FNEW A37..A40 -> A38..A41");
+    }
+  }
+
+  /* proto389 root C5 family observed after conversion:
+       GGET A36; TGETS A36 D=9265; KSTR A37 D=(731|779); KSTR A38;
+       KPRI A39; FNEW A40; CALL A36 C5
+     Native GC64/FR2 keeps the post-function hole at A37, so these FR1-style
+     carriers must move to A38..A41. Keep this fix pinned to the exact
+     erroneous instruction shape. */
+  if (ctx != NULL && ctx->proto_index == 389u) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 36 || bc_b(c) != 1 || bc_c(c) != 5) continue;
+      if (o1 != BC_FNEW || bc_a(i1) != 40) continue;
+      if (o2 != BC_KPRI || bc_a(i2) != 39) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 38) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 37) continue;
+      if (bc_d(i4) != 731 && bc_d(i4) != 779) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 36 || bc_b(i5) != 36 || bc_c(i5) != 49 || bc_d(i5) != 9265) continue;
+      if (o6 != BC_GGET || bc_a(i6) != 36 || bc_d(i6) != 34) continue;
+
+      setbc_a(&i4, 38);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 39);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 40);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 41);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 41, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto389 extend3 root C5 fix KSTR/KPRI/FNEW A37..A40 -> A38..A41 d731/d779");
+    }
+  }
+
+  /* proto192 return-format window:
+       GGET A5; TGETS A5; KSTR A6; TGETS A7; TGETS A8; CALLT A5 C4
+     Native GC64 keeps the three argument carriers on A7/A8/A9, leaving A6 as
+     the FR2 hole after the function slot. */
+  if (ctx != NULL && ctx->proto_index == 192u) {
+    uint32_t p = 0;
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALLT || bc_a(c) != 5 || bc_c(c) != 4) continue;
+      if (o1 != BC_TGETS || bc_a(i1) != 8 || bc_b(i1) != 4 || bc_c(i1) != 3) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 7 || bc_b(i2) != 4 || bc_c(i2) != 2) continue;
+      if (o3 != BC_KSTR || bc_a(i3) != 6) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 5 || bc_b(i4) != 5 || bc_c(i4) != 41) continue;
+      if (o5 != BC_GGET || bc_a(i5) != 5 || bc_d(i5) != 40) continue;
+
+      setbc_a(&i3, 7);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 9);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 9, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto192 return-format CALLT window fix A6/A7/A8 -> A7/A8/A9");
       break;
     }
   }

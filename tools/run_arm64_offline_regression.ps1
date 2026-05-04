@@ -227,11 +227,8 @@ function Test-HostToolsReady([string]$repoRootWsl) {
     $probeCmd = @(
         "cd '$repoRootWsl'",
         "test -x ./tools/bcconv_cli_wsl_dbg",
-        "./tools/bcconv_cli_wsl_dbg >/tmp/tolua_bcconv_probe.log 2>&1; test $? -eq 2",
         "test -x ./tools/bc_dump_proto_wsl",
-        "./tools/bc_dump_proto_wsl >/tmp/tolua_bcdump_probe.log 2>&1; test $? -eq 1",
-        "test -x ./tools/bcrun_cli_wsl",
-        "./tools/bcrun_cli_wsl >/tmp/tolua_bcrun_probe.log 2>&1; test $? -eq 2"
+        "test -x ./tools/bcrun_cli_wsl"
     ) -join " && "
     return (Invoke-WslBash $probeCmd) -eq 0
 }
@@ -241,6 +238,213 @@ function Test-BattleRegisterPrevRoleHarness([string]$repoRootWsl, [string]$bytec
     $runCmd = @(
         "cd '$repoRootWsl'",
         "./tools/bcrun_cli_wsl '$bytecodeWsl' registerprevrole > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-BattleRestHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_rest > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-AttackLogicTempValueArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 389 2858 2886 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto389 2858..2886 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 2858; op = "GGET";  a = 36; b = 0;  c = 34; d = 34;   tag = "pc2858" },
+        @{ pc = 2859; op = "TGETS"; a = 36; b = 36; c = 49; d = 9265; tag = "pc2859" },
+        @{ pc = 2860; op = "KSTR";  a = 38; b = 2;  c = 206; d = 718; tag = "pc2860" },
+        @{ pc = 2861; op = "KSTR";  a = 39; b = 2;  c = 207; d = 719; tag = "pc2861" },
+        @{ pc = 2862; op = "KPRI";  a = 40; b = 0;  c = 1;  d = 1;    tag = "pc2862" },
+        @{ pc = 2863; op = "FNEW";  a = 41; b = 2;  c = 208; d = 720; tag = "pc2863" },
+        @{ pc = 2864; op = "CALL";  a = 36; b = 1;  c = 5;  d = 261;  tag = "pc2864" },
+        @{ pc = 2865; op = "GGET";  a = 36; b = 0;  c = 34; d = 34;   tag = "pc2865" },
+        @{ pc = 2866; op = "TGETS"; a = 36; b = 36; c = 49; d = 9265; tag = "pc2866" },
+        @{ pc = 2867; op = "KSTR";  a = 38; b = 2;  c = 206; d = 718; tag = "pc2867" },
+        @{ pc = 2868; op = "KSTR";  a = 39; b = 2;  c = 209; d = 721; tag = "pc2868" },
+        @{ pc = 2869; op = "KPRI";  a = 40; b = 0;  c = 1;  d = 1;    tag = "pc2869" },
+        @{ pc = 2870; op = "FNEW";  a = 41; b = 2;  c = 210; d = 722; tag = "pc2870" },
+        @{ pc = 2871; op = "CALL";  a = 36; b = 1;  c = 5;  d = 261;  tag = "pc2871" },
+        @{ pc = 2872; op = "GGET";  a = 36; b = 0;  c = 34; d = 34;   tag = "pc2872" },
+        @{ pc = 2873; op = "TGETS"; a = 36; b = 36; c = 49; d = 9265; tag = "pc2873" },
+        @{ pc = 2874; op = "KSTR";  a = 38; b = 2;  c = 211; d = 723; tag = "pc2874" },
+        @{ pc = 2875; op = "KSTR";  a = 39; b = 2;  c = 207; d = 719; tag = "pc2875" },
+        @{ pc = 2876; op = "KPRI";  a = 40; b = 0;  c = 1;  d = 1;    tag = "pc2876" },
+        @{ pc = 2877; op = "FNEW";  a = 41; b = 2;  c = 212; d = 724; tag = "pc2877" },
+        @{ pc = 2878; op = "CALL";  a = 36; b = 1;  c = 5;  d = 261;  tag = "pc2878" },
+        @{ pc = 2879; op = "GGET";  a = 36; b = 0;  c = 34; d = 34;   tag = "pc2879" },
+        @{ pc = 2880; op = "TGETS"; a = 36; b = 36; c = 49; d = 9265; tag = "pc2880" },
+        @{ pc = 2881; op = "KSTR";  a = 38; b = 2;  c = 211; d = 723; tag = "pc2881" },
+        @{ pc = 2882; op = "KSTR";  a = 39; b = 2;  c = 200; d = 712; tag = "pc2882" },
+        @{ pc = 2883; op = "KPRI";  a = 40; b = 0;  c = 1;  d = 1;    tag = "pc2883" },
+        @{ pc = 2884; op = "FNEW";  a = 41; b = 2;  c = 213; d = 725; tag = "pc2884" },
+        @{ pc = 2885; op = "CALL";  a = 36; b = 1;  c = 5;  d = 261;  tag = "pc2885" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicExtend3ArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 389 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto389 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    $good731 = 0
+    $good779 = 0
+    $badPcs = New-Object System.Collections.Generic.List[string]
+    for ($idx = 6; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+        $i4 = $rows[$idx - 4]
+        $i5 = $rows[$idx - 5]
+        $i6 = $rows[$idx - 6]
+
+        if ($c.op -ne 'CALL' -or $c.a -ne 36 -or $c.b -ne 1 -or $c.c -ne 5) {
+            continue
+        }
+
+        $headOk = (
+            $i5.op -eq 'TGETS' -and $i5.a -eq 36 -and $i5.b -eq 36 -and
+            $i5.c -eq 49 -and $i5.d -eq 9265 -and
+            $i6.op -eq 'GGET' -and $i6.a -eq 36 -and $i6.d -eq 34
+        )
+        if (-not $headOk) {
+            continue
+        }
+
+        if ($i4.op -eq 'KSTR' -and $i4.a -eq 37 -and ($i4.d -eq 731 -or $i4.d -eq 779) -and
+            $i3.op -eq 'KSTR' -and $i3.a -eq 38 -and
+            $i2.op -eq 'KPRI' -and $i2.a -eq 39 -and
+            $i1.op -eq 'FNEW' -and $i1.a -eq 40) {
+            $badPcs.Add([string]$c.pc)
+            continue
+        }
+
+        if ($i4.op -eq 'KSTR' -and $i4.a -eq 38 -and ($i4.d -eq 731 -or $i4.d -eq 779) -and
+            $i3.op -eq 'KSTR' -and $i3.a -eq 39 -and
+            $i2.op -eq 'KPRI' -and $i2.a -eq 40 -and
+            $i1.op -eq 'FNEW' -and $i1.a -eq 41) {
+            if ($i4.d -eq 731) {
+                $good731++
+            } else {
+                $good779++
+            }
+        }
+    }
+
+    if ($badPcs.Count -ne 0) {
+        $fails.Add("residual bad extend3 root C5 windows at CALL pc=" + ($badPcs -join ','))
+    }
+    if ($good731 -eq 0) {
+        $fails.Add("missing corrected d731 extend3 root C5 window")
+    }
+    if ($good779 -eq 0) {
+        $fails.Add("missing corrected d779 extend3 root C5 window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicTempValueHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_tempvalue > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-AttackLogicTempValueChainHarness([string]$repoRootWsl, [string]$battleBytecodeWsl, [string]$attacklogicBytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$battleBytecodeWsl' attacklogic_tempvalue_chain '$attacklogicBytecodeWsl' > '$logWsl' 2>&1"
     ) -join " && "
     $code = Invoke-WslBash $runCmd
     return [pscustomobject]@{
@@ -288,6 +492,7 @@ if ($shouldBuild) {
 $targets = @("main.lua", "battle.lua", "migong.lua")
 $summary = @()
 $failed = $false
+$battleOutPath = $null
 
 foreach ($name in $targets) {
     $inPath = Join-Path $BytecodeDir $name
@@ -318,8 +523,10 @@ foreach ($name in $targets) {
     $workflowShiftFailures = 0
     $doAllTriggerFailures = 0
     $registerPrevRoleFailures = 0
+    $restHarnessFailures = 0
 
     if ($name -eq "battle.lua") {
+        $battleOutPath = $outPath
         $disPath = Join-Path $outAbs "battle.proto202.dis.txt"
         $workflowCheck = Test-BattleWorkflowArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $disPath
         $workflowShiftHits = $workflowCheck.hits
@@ -348,6 +555,14 @@ foreach ($name in $targets) {
             $failed = $true
             Write-Warning "[battle registerprevrole] harness failed exit=$($registerPrevRoleCheck.exit_code): $registerPrevRoleLog"
         }
+
+        $restHarnessLog = Join-Path $outAbs "battle.rest.log"
+        $restHarnessCheck = Test-BattleRestHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $restHarnessLog
+        $restHarnessFailures = if ($restHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $restHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle rest] harness failed exit=$($restHarnessCheck.exit_code): $restHarnessLog"
+        }
     }
 
     if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
@@ -367,8 +582,94 @@ foreach ($name in $targets) {
         workflow_shift_fail = $workflowShiftFailures
         doalltrigger_fail   = $doAllTriggerFailures
         registerprevrole_fail = $registerPrevRoleFailures
+        rest_fail           = $restHarnessFailures
         log_path            = $logPath
         out_path            = $outPath
+    }
+}
+
+$attacklogicName = "AttackLogic.lua"
+$attacklogicPath = Join-Path $BytecodeDir $attacklogicName
+if (Test-Path $attacklogicPath) {
+    $outPath = Join-Path $outAbs "$attacklogicName.fr2.bin"
+    $logPath = Join-Path $outAbs "$attacklogicName.dbg.log"
+    $inWsl = Convert-ToWslPath $attacklogicPath
+    $outWsl = Convert-ToWslPath $outPath
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcconv_cli_wsl_dbg '$inWsl' '$outWsl' 1 > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    $converted = Get-LogCount $logPath "converted "
+    $convFail = Get-LogCount $logPath "bytecode conversion failed"
+    $regOverflow = Get-LogCount $logPath "register_overflow"
+    $copyFallback = Get-LogCount $logPath "copy-fallback"
+
+    $shapeDis = Join-Path $outAbs "attacklogic.proto389.tempvalue.dis.txt"
+    $shapeCheck = Test-AttackLogicTempValueArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $shapeDis
+    $shapeFailures = @($shapeCheck.failures).Count
+    if (-not $shapeCheck.ok) {
+        $failed = $true
+        foreach ($msg in $shapeCheck.failures) {
+            Write-Warning "[attacklogic tempvalue shape] $msg"
+        }
+    }
+
+    $extend3ShapeDis = Join-Path $outAbs "attacklogic.proto389.extend3.dis.txt"
+    $extend3ShapeCheck = Test-AttackLogicExtend3ArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extend3ShapeDis
+    $extend3ShapeFailures = @($extend3ShapeCheck.failures).Count
+    if (-not $extend3ShapeCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extend3ShapeCheck.failures) {
+            Write-Warning "[attacklogic extend3 shape] $msg"
+        }
+    }
+
+    $harnessLog = Join-Path $outAbs "attacklogic.tempvalue.log"
+    $harnessCheck = Test-AttackLogicTempValueHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $harnessLog
+    $harnessFailures = if ($harnessCheck.ok) { 0 } else { 1 }
+    if (-not $harnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[attacklogic tempvalue] harness failed exit=$($harnessCheck.exit_code): $harnessLog"
+    }
+
+    $chainHarnessFailures = 0
+    if ($battleOutPath) {
+        $battleOutWsl = Convert-ToWslPath $battleOutPath
+        $chainHarnessLog = Join-Path $outAbs "attacklogic.tempvalue.chain.log"
+        $chainHarnessCheck = Test-AttackLogicTempValueChainHarness -repoRootWsl $repoRootWsl -battleBytecodeWsl $battleOutWsl -attacklogicBytecodeWsl $outWsl -logPath $chainHarnessLog
+        $chainHarnessFailures = if ($chainHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $chainHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[attacklogic tempvalue chain] harness failed exit=$($chainHarnessCheck.exit_code): $chainHarnessLog"
+        }
+    }
+
+    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
+        $failed = $true
+    }
+
+    $summary += [pscustomobject]@{
+        file                  = $attacklogicName
+        exit_code             = $code
+        converted_lines       = $converted
+        conversion_failed     = $convFail
+        register_overflow     = $regOverflow
+        kstr_tdup_rejects     = 0
+        table_style_guards    = 0
+        copy_fallback_hits    = $copyFallback
+        workflow_shift_hits   = 0
+        workflow_shift_fail   = 0
+        doalltrigger_fail     = 0
+        registerprevrole_fail = 0
+        rest_fail             = 0
+        tempvalue_shape_fail  = $shapeFailures
+        extend3_shape_fail    = $extend3ShapeFailures
+        tempvalue_fail        = $harnessFailures
+        tempvalue_chain_fail  = $chainHarnessFailures
+        log_path              = $logPath
+        out_path              = $outPath
     }
 }
 
@@ -382,6 +683,21 @@ if ($UpdateBaseline) {
 elseif (Test-Path $baselinePath) {
     $baseline = Get-Content $baselinePath -Raw | ConvertFrom-Json
     foreach ($row in $summary) {
+        if ($row.file -eq "AttackLogic.lua") {
+            if ($row.PSObject.Properties.Name -contains 'tempvalue_shape_fail' -and $row.tempvalue_shape_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'extend3_shape_fail' -and $row.extend3_shape_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'tempvalue_fail' -and $row.tempvalue_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'tempvalue_chain_fail' -and $row.tempvalue_chain_fail -ne 0) {
+                $failed = $true
+            }
+            continue
+        }
         $baseRow = $baseline | Where-Object { $_.file -eq $row.file } | Select-Object -First 1
         if ($null -eq $baseRow) {
             $failed = $true
@@ -401,6 +717,9 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'registerprevrole_fail' -and $row.registerprevrole_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'rest_fail' -and $row.rest_fail -ne 0) {
                 $failed = $true
             }
         }

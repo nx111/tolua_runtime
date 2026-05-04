@@ -259,6 +259,83 @@ function Test-BattleRestHarness([string]$repoRootWsl, [string]$bytecodeWsl, [str
     }
 }
 
+function Test-BattleBeforeSkillAnimationCallbackShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 177 744 788 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto177 744..788 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 754; op = "MOV";   a = 11; b = 0;  c = 10; d = 10; tag = "pc754" },
+        @{ pc = 755; op = "MOV";   a = 13; b = 0;  c = 0;  d = 0;  tag = "pc755" },
+        @{ pc = 756; op = "MOV";   a = 14; b = 0;  c = 1;  d = 1;  tag = "pc756" },
+        @{ pc = 757; op = "MOV";   a = 15; b = 0;  c = 2;  d = 2;  tag = "pc757" },
+        @{ pc = 758; op = "MOV";   a = 16; b = 0;  c = 3;  d = 3;  tag = "pc758" },
+        @{ pc = 759; op = "MOV";   a = 17; b = 0;  c = 5;  d = 5;  tag = "pc759" },
+        @{ pc = 760; op = "CALL";  a = 11; b = 1;  c = 6;  d = 262; tag = "pc760" },
+        @{ pc = 782; op = "TGETS"; a = 12; b = 11; c = 119; d = 2935; tag = "pc782" },
+        @{ pc = 783; op = "MOV";   a = 14; b = 0;  c = 0;  d = 0;  tag = "pc783" },
+        @{ pc = 784; op = "MOV";   a = 15; b = 0;  c = 1;  d = 1;  tag = "pc784" },
+        @{ pc = 785; op = "MOV";   a = 16; b = 0;  c = 2;  d = 2;  tag = "pc785" },
+        @{ pc = 786; op = "MOV";   a = 17; b = 0;  c = 3;  d = 3;  tag = "pc786" },
+        @{ pc = 787; op = "MOV";   a = 18; b = 0;  c = 5;  d = 5;  tag = "pc787" },
+        @{ pc = 788; op = "CALL";  a = 12; b = 1;  c = 6;  d = 262; tag = "pc788" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BattleBeforeSkillAnimationCallbackHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_beforeskillanimation_callback > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicTempValueArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -811,6 +888,52 @@ function Test-AttackLogicExtendTalents2GedangLogShift([string]$repoRootWsl, [str
     }
 }
 
+function Test-AttackLogicExtendTalents2MissLogWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 320 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto320 failed exit=$code")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $badPattern = '(?ms)^\d{4}\s+line=6346\s+MOV\s+A=11\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=12\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=12\s+B=12\s+C=4\s+D=3076.*\r?\n' +
+        '^\d{4}\s+line=6346\s+KSTR\s+A=13\s+B=0\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}\s+line=6346\s+CAT\s+A=12\s+B=12\s+C=13\s+D=3085.*\r?\n' +
+        '^\d{4}\s+line=6346\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $goodPattern = '(?ms)^\d{4}\s+line=6346\s+MOV\s+A=12\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=13\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}\s+line=6346\s+TGETS\s+A=13\s+B=13\s+C=4\s+D=3332.*\r?\n' +
+        '^\d{4}\s+line=6346\s+KSTR\s+A=14\s+B=0\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}\s+line=6346\s+CAT\s+A=13\s+B=13\s+C=14\s+D=3342.*\r?\n' +
+        '^\d{4}\s+line=6346\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $badCount = [regex]::Matches($disText, $badPattern).Count
+    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badCount -ne 0) {
+        $fails.Add("residual bad proto320 extendtalents2 miss bf.Log window")
+    }
+    if ($goodCount -eq 0) {
+        $fails.Add("missing corrected proto320 extendtalents2 miss bf.Log window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicExtendTalents2ChaizhaoLogShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -1290,6 +1413,19 @@ function Test-AttackLogicExtendTalents2GedangLogHarness([string]$repoRootWsl, [s
     }
 }
 
+function Test-AttackLogicExtendTalents2MissLogHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_misslog > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicExtendTalents2ChaizhaoLogHarness([string]$repoRootWsl, [string]$battleBytecodeWsl, [string]$attacklogicBytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -1400,6 +1536,7 @@ foreach ($name in $targets) {
     $doAllTriggerFailures = 0
     $registerPrevRoleFailures = 0
     $restHarnessFailures = 0
+    $beforeSkillAnimationFailures = 0
 
     if ($name -eq "battle.lua") {
         $battleOutPath = $outPath
@@ -1439,6 +1576,26 @@ foreach ($name in $targets) {
             $failed = $true
             Write-Warning "[battle rest] harness failed exit=$($restHarnessCheck.exit_code): $restHarnessLog"
         }
+
+        $beforeSkillAnimationDis = Join-Path $outAbs "battle.proto177.beforeskillanimation.dis.txt"
+        $beforeSkillAnimationShapeCheck = Test-BattleBeforeSkillAnimationCallbackShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationDis
+        $beforeSkillAnimationShapeFailures = @($beforeSkillAnimationShapeCheck.failures).Count
+        if (-not $beforeSkillAnimationShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $beforeSkillAnimationShapeCheck.failures) {
+                Write-Warning "[battle beforeskillanimation shape] $msg"
+            }
+        }
+
+        $beforeSkillAnimationLog = Join-Path $outAbs "battle.beforeskillanimation_callback.log"
+        $beforeSkillAnimationHarnessCheck = Test-BattleBeforeSkillAnimationCallbackHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $beforeSkillAnimationLog
+        $beforeSkillAnimationHarnessFailures = if ($beforeSkillAnimationHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $beforeSkillAnimationHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle beforeskillanimation harness] failed exit=$($beforeSkillAnimationHarnessCheck.exit_code): $beforeSkillAnimationLog"
+        }
+
+        $beforeSkillAnimationFailures = $beforeSkillAnimationShapeFailures + $beforeSkillAnimationHarnessFailures
     }
 
     if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
@@ -1459,6 +1616,7 @@ foreach ($name in $targets) {
         doalltrigger_fail   = $doAllTriggerFailures
         registerprevrole_fail = $registerPrevRoleFailures
         rest_fail           = $restHarnessFailures
+        beforeskillanimation_fail = $beforeSkillAnimationFailures
         log_path            = $logPath
         out_path            = $outPath
     }
@@ -1542,6 +1700,16 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $extendTalents2MissDis = Join-Path $outAbs "attacklogic.proto320.extendtalents2_misslog.dis.txt"
+    $extendTalents2MissCheck = Test-AttackLogicExtendTalents2MissLogWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalents2MissDis
+    $extendTalents2MissFailures = @($extendTalents2MissCheck.failures).Count
+    if (-not $extendTalents2MissCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extendTalents2MissCheck.failures) {
+            Write-Warning "[attacklogic extendtalents2 miss bf.log shape] $msg"
+        }
+    }
+
     $extendTalents2ChaizhaoDis = Join-Path $outAbs "attacklogic.proto364.extendtalents2_chaizhaolog.dis.txt"
     $extendTalents2ChaizhaoCheck = Test-AttackLogicExtendTalents2ChaizhaoLogShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalents2ChaizhaoDis
     $extendTalents2ChaizhaoFailures = @($extendTalents2ChaizhaoCheck.failures).Count
@@ -1601,8 +1769,16 @@ if (Test-Path $attacklogicPath) {
 
     $chainHarnessFailures = 0
     $extendTalents2LogHarnessFailures = 0
+    $extendTalents2MissHarnessFailures = 0
     $extendTalents2YihuaHarnessFailures = 0
     $extendTalents2FullProbeFailures = 0
+    $extendTalents2MissLog = Join-Path $outAbs "attacklogic.extendtalents2.misslog.log"
+    $extendTalents2MissHarnessCheck = Test-AttackLogicExtendTalents2MissLogHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2MissLog
+    $extendTalents2MissHarnessFailures = if ($extendTalents2MissHarnessCheck.ok) { 0 } else { 1 }
+    if (-not $extendTalents2MissHarnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[attacklogic extendtalents2 misslog] harness failed exit=$($extendTalents2MissHarnessCheck.exit_code): $extendTalents2MissLog"
+    }
     $extendTalents2FullProbeLog = Join-Path $outAbs "attacklogic.extendtalents2.fullprobe.log"
     $extendTalents2FullProbeCheck = Test-AttackLogicExtendTalents2FullProbeHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2FullProbeLog
     $extendTalents2FullProbeFailures = if ($extendTalents2FullProbeCheck.ok) { 0 } else { 1 }
@@ -1611,16 +1787,15 @@ if (Test-Path $attacklogicPath) {
         Write-Warning "[attacklogic extendtalents2 fullprobe] harness failed exit=$($extendTalents2FullProbeCheck.exit_code): $extendTalents2FullProbeLog"
     }
 
-    # Legacy battle+AttackLogic combo harnesses were narrower than fullprobe and
-    # repeatedly failed due stub drift after the same runtime chain was already
-    # covered by:
-    #   1) root registration harness,
-    #   2) static proto window gates,
-    #   3) attacklogic_extendtalents2_fullprobe.
-    # The dedicated yihua harness also stays out of gating: loading AttackLogic
-    # alone aborts at tmp.lua:26986 before the later workflow registrations are
-    # complete, so the runtime callback for line 6735 is absent from
-    # BattleUtil.GetWorkflowForTalent in offline single-file mode.
+    # Legacy battle+AttackLogic combo harnesses stayed out of gating once
+    # fullprobe covered the same runtime path and the combo stubs started to
+    # drift. The misslog harness stays in gating because it reuses the same
+    # single-file stub as fullprobe, but forces result.Hp==0 and proves the
+    # early line6346 branch that fullprobe does not pin.
+    # The dedicated yihua harness still stays out of gating because loading
+    # AttackLogic alone aborts at tmp.lua:26986 before the later workflow
+    # registrations are complete, so the runtime callback for line 6735 is
+    # absent from BattleUtil.GetWorkflowForTalent in offline single-file mode.
 
     if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
         $failed = $true
@@ -1644,10 +1819,10 @@ if (Test-Path $attacklogicPath) {
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
         rolevalues_log_fail   = $roleValuesLogFailures
-        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalents2GedangFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
+        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
-        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures)
+        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures)
         log_path              = $logPath
         out_path              = $outPath
     }
@@ -1712,6 +1887,9 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'rest_fail' -and $row.rest_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'beforeskillanimation_fail' -and $row.beforeskillanimation_fail -ne 0) {
                 $failed = $true
             }
         }

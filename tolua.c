@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-proto320-misslog-bflog";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-proto108-storyaction-callbackc3";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -1853,11 +1853,28 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
+    int method_like_self_seed = 0;
+
+    /* Exclude method-style self forwarding from the "direct passthrough"
+       fast-path:
+       MOV self<-obj; TGET* func<-obj[method]; MOV arg1<-param; CALL(C=3)
+       FR2 needs the empty slot between func and self here, so skipping the
+       shift leaves callback-style arg1 on the wrong register. */
+    if ((prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
+        bc_op(prev3) == BC_MOV &&
+        bc_op(prev1) == BC_MOV &&
+        bc_a(prev2) == base &&
+        bc_a(prev3) == old_first &&
+        bc_a(prev1) == old_last &&
+        bc_b(prev2) == bc_d(prev3)) {
+      method_like_self_seed = 1;
+    }
 
     /* Keep two-arg direct passthrough calls as-is only when both args are
        untouched caller seeds:
        MOV arg1<-param; (TGET*|UGET|GGET) func<-param; MOV arg2<-param; CALL(C=3). */
-    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev3)) &&
+    if (!method_like_self_seed &&
+        tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev3)) &&
         tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev1)) &&
         bc_op(prev1) == BC_MOV &&
         bc_a(prev1) == old_last &&
@@ -6620,6 +6637,74 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto364 second bf.Log window fix A14..A18 -> A15..A19");
+    }
+  }
+
+  /* proto364 callback caller observed after conversion:
+       MOV A20 <- A19; MOV A21 <- A0; MOV A22 <- A1; MOV A23 <- A2;
+       MOV A24 <- A3; MOV A25 <- A4; MOV A26 <- A5; MOV A27 <- A14;
+       MOV A28 <- A6; MOV A29 <- A7; CALL A20 B1 C10
+     Native GC64/FR2 keeps one empty slot after the function register, so the
+     nine arguments must live on A22..A30 instead of A21..A29. Without that,
+     the callback sees targetSprite shifted to skill and GetRrevRole(targetSprite)
+     returns nil. */
+  if (ctx != NULL && ctx->proto_index == 364u) {
+    uint32_t p = 0;
+    for (p = 10; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCIns i9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 9) * 4, be);
+      BCIns i10 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 10) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8), o9 = bc_op(i9);
+      BCOp o10 = bc_op(i10);
+
+      if (cop != BC_CALL || bc_a(c) != 20 || bc_b(c) != 1 || bc_c(c) != 10) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 29 || bc_d(i1) != 7) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 28 || bc_d(i2) != 6) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 27 || bc_d(i3) != 14) continue;
+      if (o4 != BC_MOV || bc_a(i4) != 26 || bc_d(i4) != 5) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 25 || bc_d(i5) != 4) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 24 || bc_d(i6) != 3) continue;
+      if (o7 != BC_MOV || bc_a(i7) != 23 || bc_d(i7) != 2) continue;
+      if (o8 != BC_MOV || bc_a(i8) != 22 || bc_d(i8) != 1) continue;
+      if (o9 != BC_MOV || bc_a(i9) != 21 || bc_d(i9) != 0) continue;
+      if (o10 != BC_MOV || bc_a(i10) != 20 || bc_d(i10) != 19) continue;
+
+      setbc_a(&i9, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 9) * 4, (uint32_t)i9, be);
+      setbc_a(&i8, 23);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 8) * 4, (uint32_t)i8, be);
+      setbc_a(&i7, 24);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 7) * 4, (uint32_t)i7, be);
+      setbc_a(&i6, 25);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_a(&i5, 26);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i4, 27);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 28);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 29);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 30);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 30, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto364 callback call C10 arg fix A21..A29 -> A22..A30");
     }
   }
 

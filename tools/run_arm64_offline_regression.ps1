@@ -504,6 +504,133 @@ function Test-AttackLogicExtend3ArgShift([string]$repoRootWsl, [string]$bytecode
     }
 }
 
+function Test-AttackLogicExtend3PrevRoleDefCallWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 364 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto364 failed exit=$code")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $badPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=19\s+D=19.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=7\s+D=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=10\s+D=266'
+    $goodPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=19\s+D=19.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=7\s+D=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=10\s+D=266'
+    $badCount = [regex]::Matches($disText, $badPattern).Count
+    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badCount -ne 0) {
+        $fails.Add("residual bad proto364 callback C10 window")
+    }
+    if ($goodCount -eq 0) {
+        $fails.Add("missing corrected proto364 callback C10 window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-GameEngineExecuteNextStoryActionCallbackWindows([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 108 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto108 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=(?<line>\d+))?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                line = if ($matches['line']) { [int]$matches['line'] } else { -1 }
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $targetLines = @(2649, 2654, 2677, 2715, 2725, 2745, 2750)
+    $fails = New-Object System.Collections.Generic.List[string]
+
+    foreach ($lineNo in $targetLines) {
+        $badCount = 0
+        $goodCount = 0
+        for ($i = 0; $i -le $rows.Count - 4; $i++) {
+            $r0 = $rows[$i + 0]
+            $r1 = $rows[$i + 1]
+            $r2 = $rows[$i + 2]
+            $r3 = $rows[$i + 3]
+            if ($r0.line -ne $lineNo -or $r1.line -ne $lineNo -or $r2.line -ne $lineNo -or $r3.line -ne $lineNo) {
+                continue
+            }
+
+            if ($r0.op -eq 'MOV' -and $r0.a -eq 8 -and $r0.b -eq 0 -and $r0.c -eq 0 -and $r0.d -eq 0 -and
+                $r1.op -eq 'TGETS' -and $r1.a -eq 7 -and $r1.b -eq 0 -and $r1.c -eq 84 -and $r1.d -eq 84 -and
+                $r2.op -eq 'MOV' -and $r2.a -eq 9 -and $r2.b -eq 0 -and $r2.c -eq 3 -and $r2.d -eq 3 -and
+                $r3.op -eq 'CALL' -and $r3.a -eq 7 -and $r3.b -eq 1 -and $r3.c -eq 3 -and $r3.d -eq 259) {
+                $badCount++
+            }
+
+            if ($r0.op -eq 'MOV' -and $r0.a -eq 9 -and $r0.b -eq 0 -and $r0.c -eq 0 -and $r0.d -eq 0 -and
+                $r1.op -eq 'TGETS' -and $r1.a -eq 7 -and $r1.b -eq 0 -and $r1.c -eq 84 -and $r1.d -eq 84 -and
+                $r2.op -eq 'MOV' -and $r2.a -eq 10 -and $r2.b -eq 0 -and $r2.c -eq 3 -and $r2.d -eq 3 -and
+                $r3.op -eq 'CALL' -and $r3.a -eq 7 -and $r3.b -eq 1 -and $r3.c -eq 3 -and $r3.d -eq 259) {
+                $goodCount++
+            }
+        }
+
+        if ($badCount -ne 0) {
+            $fails.Add("residual bad GameEngine callback window at line=$lineNo")
+        }
+        if ($goodCount -eq 0) {
+            $fails.Add("missing corrected GameEngine callback window at line=$lineNo")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicRoleValuesArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -1622,6 +1749,33 @@ foreach ($name in $targets) {
     }
 }
 
+$gameEngineName = "GameEngine.lua"
+$gameEnginePath = Join-Path $BytecodeDir $gameEngineName
+if (Test-Path $gameEnginePath) {
+    $outPath = Join-Path $outAbs "$gameEngineName.fr2.bin"
+    $logPath = Join-Path $outAbs "$gameEngineName.dbg.log"
+    $inWsl = Convert-ToWslPath $gameEnginePath
+    $outWsl = Convert-ToWslPath $outPath
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcconv_cli_wsl_dbg '$inWsl' '$outWsl' 1 > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    $converted = Get-LogCount $logPath "converted "
+    $convFail = Get-LogCount $logPath "bytecode conversion failed"
+    $gameEngineDis = Join-Path $outAbs "gameengine.proto108.executenextstoryaction.dis.txt"
+    $gameEngineCheck = Test-GameEngineExecuteNextStoryActionCallbackWindows -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $gameEngineDis
+    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0 -or -not $gameEngineCheck.ok) {
+        $failed = $true
+    }
+    if (-not $gameEngineCheck.ok) {
+        foreach ($msg in $gameEngineCheck.failures) {
+            Write-Warning "[gameengine story callback shape] $msg"
+        }
+    }
+}
+
 $attacklogicName = "AttackLogic.lua"
 $attacklogicPath = Join-Path $BytecodeDir $attacklogicName
 if (Test-Path $attacklogicPath) {
@@ -1652,11 +1806,19 @@ if (Test-Path $attacklogicPath) {
 
     $extend3ShapeDis = Join-Path $outAbs "attacklogic.proto389.extend3.dis.txt"
     $extend3ShapeCheck = Test-AttackLogicExtend3ArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extend3ShapeDis
-    $extend3ShapeFailures = @($extend3ShapeCheck.failures).Count
+    $extend3PrevRoleDefDis = Join-Path $outAbs "attacklogic.proto364.extend3_prevroledef_call.dis.txt"
+    $extend3PrevRoleDefCheck = Test-AttackLogicExtend3PrevRoleDefCallWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extend3PrevRoleDefDis
+    $extend3ShapeFailures = @($extend3ShapeCheck.failures).Count + @($extend3PrevRoleDefCheck.failures).Count
     if (-not $extend3ShapeCheck.ok) {
         $failed = $true
         foreach ($msg in $extend3ShapeCheck.failures) {
             Write-Warning "[attacklogic extend3 shape] $msg"
+        }
+    }
+    if (-not $extend3PrevRoleDefCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extend3PrevRoleDefCheck.failures) {
+            Write-Warning "[attacklogic extend3 prevroledef call] $msg"
         }
     }
 
@@ -1787,9 +1949,11 @@ if (Test-Path $attacklogicPath) {
         Write-Warning "[attacklogic extendtalents2 fullprobe] harness failed exit=$($extendTalents2FullProbeCheck.exit_code): $extendTalents2FullProbeLog"
     }
 
-    # Legacy battle+AttackLogic combo harnesses stayed out of gating once
-    # fullprobe covered the same runtime path and the combo stubs started to
-    # drift. The misslog harness stays in gating because it reuses the same
+    # The battle+AttackLogic combo harness stays out of gating; the stub still
+    # drifts on optional list/title fields and is not the right proof point for
+    # the proto364 CALL(C=10) issue. That path is guarded here by the dedicated
+    # proto364 static window check instead.
+    # The misslog harness stays in gating because it reuses the same
     # single-file stub as fullprobe, but forces result.Hp==0 and proves the
     # early line6346 branch that fullprobe does not pin.
     # The dedicated yihua harness still stays out of gating because loading

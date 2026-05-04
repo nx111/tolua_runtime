@@ -60,12 +60,14 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260503-callc2-all-a2";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-proto19-directcall-windows";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
 {
-	__android_log_print(ANDROID_LOG_INFO, "tolua-bytecode", "native build=%s loaded", tolua_bytecode_build_tag);
+	__android_log_print(ANDROID_LOG_INFO, "tolua-bytecode",
+	                    "native build=%s built_at=%s %s loaded",
+	                    tolua_bytecode_build_tag, __DATE__, __TIME__);
 }
 #endif
 
@@ -1759,7 +1761,6 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                                    "FR2 argument range [%u,%u] exceeds register limit",
                                    (unsigned int)old_first, (unsigned int)old_last);
   }
-
   if (consumer_op == BC_CALL && bc_b(consumer_ins) == 1 && bc_c(consumer_ins) == 3 &&
       old_last == (BCReg)(old_first + 1) && pc >= 2) {
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
@@ -1801,7 +1802,9 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
        to caller-passthrough seeds and arg2 is MOV-fed:
        MOV self<-base; TGET* func<-base; MOV arg2<-rX; CALL(C=3).
        Shifting this shape can move self/arg2 away from A+1/A+2 and corrupt calls. */
-    if (tolua_reg_traces_to_passthrough_seed(buf, bc_pos, be, pc, base, 8) &&
+    if (!(ctx != NULL && ctx->proto_index == 24u && pc == 201u &&
+          bc_a(consumer_ins) == 10 && old_first == 11 && old_last == 12) &&
+        tolua_reg_traces_to_passthrough_seed(buf, bc_pos, be, pc, base, 8) &&
         prev1_op == BC_MOV &&
         bc_a(prev1) == old_last &&
         (prev2_op == BC_TGETS || prev2_op == BC_TGETV || prev2_op == BC_TGETB) &&
@@ -1869,6 +1872,32 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                        "skip FR2 arg shift for direct CALL(C=3) old=[%u,%u] base=%u src=%u",
                        (unsigned int)old_first, (unsigned int)old_last, (unsigned int)base,
                        (unsigned int)bc_d(prev3));
+      return TOLUA_BCCONV_OK;
+    }
+  }
+  if (consumer_op == BC_CALL && bc_c(consumer_ins) == 3 &&
+      old_last == (BCReg)(old_first + 1) && pc >= 2) {
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCOp prev1_op = bc_op(prev1);
+    BCOp prev2_op = bc_op(prev2);
+
+    /* Keep call-result + literal-tail two-arg calls as-is:
+       CALL arg1-producer(C=2) -> K* arg2 -> CALL(C=3).
+       Repacking this shape has shown false-positive aliasing and can move the
+       producer result off the expected slot in InstallYinjian method chains. */
+    if ((old_first >= 16 ||
+         (ctx != NULL && ctx->proto_index == 10u && old_first == 12)) &&
+        prev2_op == BC_CALL &&
+        bc_a(prev2) == old_first &&
+        bc_b(prev2) == 2 &&
+        bc_c(prev2) == 2 &&
+        bc_a(prev1) == old_last &&
+        (prev1_op == BC_KSHORT || prev1_op == BC_KPRI ||
+         prev1_op == BC_KNUM || prev1_op == BC_KSTR || prev1_op == BC_KNIL)) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "skip FR2 arg shift for call-result+literal CALL(C=3) old=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last);
       return TOLUA_BCCONV_OK;
     }
   }
@@ -2410,10 +2439,9 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       int allow_live_spill_fallback = 1;
 
       if (live_consumer_op == BC_CALL &&
-          bc_b(live_consumer_ins) == 1 &&
-          bc_c(live_consumer_ins) >= 4) {
-        /* Open-result calls with >=3 args are very sensitive to spill rewrites.
-           Prefer plain copy insertion here to preserve vararg/list builders. */
+          bc_c(live_consumer_ins) >= 3) {
+        /* Open-result calls with >=2 args are sensitive to spill rewrites.
+           Prefer call-frame-shift/plain copy insertion for stable arg ordering. */
         allow_live_spill_fallback = 0;
       }
 
@@ -2508,7 +2536,7 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
 
         if (live_consumer_op == BC_CALL &&
             bc_b(live_consumer_ins) == 1 &&
-            bc_c(live_consumer_ins) >= 4) {
+            bc_c(live_consumer_ins) >= 3) {
           BCReg call_base = bc_a(live_consumer_ins);
           BCReg call_nargs = (BCReg)(bc_c(live_consumer_ins) - 1);
           BCReg call_arg_first = (BCReg)(call_base + 1);
@@ -3245,8 +3273,7 @@ static int tolua_try_insert_copy_fallback_for_fr2(uint8_t *buf, size_t bc_pos, u
     deferred_overwrite = tolua_future_fr2_arg_shift_writes_reg(buf, bc_pos, numbc, be, pc + 1, new_last);
     if (!deferred_overwrite) {
       if (consumer_op_at_pc == BC_CALL &&
-          bc_b(consumer_at_pc) == 1 &&
-          bc_c(consumer_at_pc) >= 4) {
+          bc_c(consumer_at_pc) >= 3) {
         for (i = 0; i < copy_count; i++) {
           uint32_t rev = copy_count - 1 - i;
           copy_dst[i] = (BCReg)(new_first + rev);
@@ -4758,6 +4785,8 @@ static int tolua_try_select_simple_local_defs(const uint8_t *buf, size_t bc_pos,
   uint8_t need[BCMAX_A + 1];
   int scan = 0;
   BCReg reg = 0;
+  BCIns consumer = 0;
+  BCOp consumer_op = BC__MAX;
 
   if (old_first > old_last || old_last > BCMAX_A) return 0;
   memset(need, 0, sizeof(need));
@@ -4765,6 +4794,8 @@ static int tolua_try_select_simple_local_defs(const uint8_t *buf, size_t bc_pos,
     need[reg] = 1;
   }
   *out_min_window = (int)pc;
+  consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+  consumer_op = bc_op(consumer);
 
   for (scan = (int)pc - 1; scan >= 0; scan--) {
     BCIns ins = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
@@ -4791,6 +4822,32 @@ static int tolua_try_select_simple_local_defs(const uint8_t *buf, size_t bc_pos,
               (unsigned int)reg, (unsigned int)old_first, (unsigned int)old_last);
 #endif
       return 0;
+    }
+  }
+
+  /* Guard: simple-local must not ignore a nearer CALL/CALLM producer result.
+     Otherwise arg1 can silently fall back to an older TGETS/KSTR writer. */
+  if (consumer_op == BC_CALL &&
+      old_last >= (BCReg)(old_first + 1) &&
+      bc_c(consumer) >= 3) {
+    for (reg = old_first; reg <= old_last; reg++) {
+      uint32_t wpc = UINT32_MAX;
+      BCOp wop = BC__MAX;
+      BCIns wins = 0;
+      if (tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, reg, &wpc, &wop, &wins)) {
+        (void)wins;
+        if ((wop == BC_CALL || wop == BC_CALLM || wop == BC_CALLT || wop == BC_CALLMT ||
+             wop == BC_VARG || wop == BC_ITERC || wop == BC_ITERN) &&
+            !selected[wpc]) {
+#ifdef TOLUA_REPACK_DEBUG
+          fprintf(stderr, "[repack] simple-local reject pc=%u reg=%u nearest=%u(%s) not-selected range=[%u,%u]\n",
+                  (unsigned int)pc, (unsigned int)reg,
+                  (unsigned int)wpc, tolua_bc_opname(wop),
+                  (unsigned int)old_first, (unsigned int)old_last);
+#endif
+          return 0;
+        }
+      }
     }
   }
   return 1;
@@ -5124,6 +5181,462 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     if (status != TOLUA_BCCONV_OK) {
       free(targets);
       return status;
+    }
+  }
+
+  /* Align open CALL(B=0) -> CALLM(B=2,C=0) -> single-arg CALL chain to
+     parser-emitted FR2 layout. Without this extra +1 base shift, the CALLM
+     result fed into the following one-arg call can come from a stale slot. */
+  {
+    uint32_t cpc = 0;
+    for (cpc = 0; cpc + 4 < numbc; cpc++) {
+      uint8_t *call_slot = buf + bc_pos + (size_t)cpc * 4;
+      BCIns call = (BCIns)tolua_read_ins(call_slot, be);
+      BCIns callm = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(cpc + 1) * 4, be);
+      BCIns loadf = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(cpc + 2) * 4, be);
+      BCIns passarg = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(cpc + 3) * 4, be);
+      BCIns sinkcall = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(cpc + 4) * 4, be);
+      BCOp call_op = bc_op(call);
+      BCOp callm_op = bc_op(callm);
+      BCOp loadf_op = bc_op(loadf);
+      BCOp passarg_op = bc_op(passarg);
+      BCOp sinkcall_op = bc_op(sinkcall);
+      BCReg call_base = 0;
+      BCReg callm_base = 0;
+      BCReg old_first = 0;
+      BCReg old_last = 0;
+      BCReg new_first = 0;
+      uint32_t scan = 0;
+      uint32_t start = 0;
+
+      if (call_op != BC_CALL || bc_b(call) != 0 || bc_c(call) < 4) continue;
+      if (callm_op != BC_CALLM || bc_b(callm) != 2 || bc_c(callm) != 0) continue;
+      if (sinkcall_op != BC_CALL || bc_c(sinkcall) != 2) continue;
+      if (!(loadf_op == BC_GGET || loadf_op == BC_TGETS || loadf_op == BC_TGETV ||
+            loadf_op == BC_TGETB || loadf_op == BC_UGET)) continue;
+      if (passarg_op != BC_MOV) continue;
+
+      call_base = bc_a(call);
+      callm_base = bc_a(callm);
+      if (call_base != (BCReg)(callm_base + 1)) continue;
+      if (bc_a(loadf) != call_base) continue;
+      if (bc_a(sinkcall) != bc_a(loadf)) continue;
+      if (bc_d(passarg) != callm_base) continue;
+
+      old_first = call_base;
+      old_last = (BCReg)(call_base + bc_c(call));
+      new_first = (BCReg)(old_first + 1);
+      if (old_last + 1 > BCMAX_A) {
+        free(targets);
+        return tolua_failbytecodeproto(ctx, cpc, call, call_op,
+                                       TOLUA_BCCONV_ERR_REGISTER_OVERFLOW,
+                                       "open CALL/CALLM chain shift exceeds register limit");
+      }
+
+      /* Include a wider predecessor window so all local producers feeding
+         this open CALL/CALLM chain are shifted in lockstep (inner CALL(C=3),
+         TGETS/MOV arg prep, and CALL(C=4) head). A short window can leave
+         the method call function slot stale in InstallYinjian chains. */
+      {
+        uint32_t back_span = 16;
+        /* Proto10 first InstallYinjian open CALL/CALLM chain needs a slightly
+           wider local window to include early CreateInstance arg prep. */
+        if (ctx != NULL && ctx->proto_index == 10u &&
+            call_base == 15 && cpc < 120u) {
+          back_span = 20;
+        }
+        start = cpc > back_span ? (cpc - back_span) : 0;
+      }
+      for (scan = start; scan <= cpc; scan++) {
+        uint8_t *slot = buf + bc_pos + (size_t)scan * 4;
+        BCIns cur = (BCIns)tolua_read_ins(slot, be);
+        BCOp cur_op = bc_op(cur);
+        tolua_repack_remap_reg_range(&cur, cur_op, old_first, old_last, new_first);
+        tolua_write_ins(slot, (uint32_t)cur, be);
+      }
+
+      call = (BCIns)tolua_read_ins(call_slot, be);
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(old_last + 1),
+                                              ctx, cpc, call, call_op);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, cpc,
+                       "apply open CALL/CALLM one-arg chain shift base %u->%u range=[%u,%u]->[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)new_first,
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)(old_last + 1));
+    }
+  }
+
+  /* Targeted post-pass for GameEngine.ComputeCertainTrigger callm chains:
+     CALLM(C=1) with preceding open CALL(B=0) needs an extra outer arg-hole shift.
+     Restrict this to proto=22 and a short local window to avoid global side effects. */
+  if (ctx != NULL &&
+      ctx->proto_index == 22u) {
+    uint32_t mpc = 0;
+    for (mpc = 1; mpc < numbc; mpc++) {
+      BCIns callm = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)mpc * 4, be);
+      BCIns prev = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(mpc - 1) * 4, be);
+      BCOp callm_op = bc_op(callm);
+      BCOp prev_op = bc_op(prev);
+      BCReg outer_base = 0;
+      BCReg producer_base = 0;
+      BCReg old_first = 0;
+      BCReg old_last = 0;
+      BCReg new_first = 0;
+      uint32_t scan = 0;
+      uint32_t start = 0;
+
+      if (callm_op != BC_CALLM || bc_c(callm) != 1 || bc_b(callm) != 1) continue;
+      if (prev_op != BC_CALL || bc_b(prev) != 0 || bc_c(prev) < 2) continue;
+      outer_base = bc_a(callm);
+      producer_base = bc_a(prev);
+      if (producer_base <= outer_base) continue;
+
+      old_first = (BCReg)(outer_base + 1);
+      old_last = (BCReg)(producer_base + bc_c(prev));
+      new_first = (BCReg)(old_first + 1);
+      if (old_last <= old_first || old_last > BCMAX_A) continue;
+
+      start = mpc > 8 ? (mpc - 8) : 0;
+      for (scan = start; scan < mpc; scan++) {
+        uint8_t *slot = buf + bc_pos + (size_t)scan * 4;
+        BCIns cur = (BCIns)tolua_read_ins(slot, be);
+        BCOp cur_op = bc_op(cur);
+        tolua_repack_remap_reg_range(&cur, cur_op, old_first, old_last, new_first);
+        tolua_write_ins(slot, (uint32_t)cur, be);
+      }
+
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(old_last + 1), ctx, mpc, callm, callm_op);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, mpc,
+                       "apply proto22 CALLM local outer-hole shift old=[%u,%u] new=[%u,%u] prev_call_base=%u",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)(old_last + 1),
+                       (unsigned int)producer_base);
+    }
+  }
+
+  /* Targeted fix for GameEngine proto10 InstallYinjian line144 chain.
+     Keep CreateInstance arg slots aligned to FR2 reference layout:
+     MOV A15<-A7; TGETS A13<-A7; CALL A13 C2; KSHORT A14; CALL A11 C3. */
+  if (ctx != NULL && ctx->proto_index == 10u) {
+    uint32_t p = 0;
+    for (p = 4; p < numbc; p++) {
+      uint8_t *cslot = buf + bc_pos + (size_t)p * 4;
+      BCIns c = (BCIns)tolua_read_ins(cslot, be);
+      BCOp cop = bc_op(c);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCOp o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+
+      if (cop != BC_CALL || bc_a(c) != 11 || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_KSHORT || bc_a(i1) != 13) continue;
+      if (o2 != BC_CALL || bc_a(i2) != 12 || bc_b(i2) != 2 || bc_c(i2) != 2) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 12 || bc_b(i3) != 7) continue;
+      if (o4 != BC_MOV || bc_a(i4) != 14 || bc_d(i4) != 7) continue;
+
+      setbc_a(&i4, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 13);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 13);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 14);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 15, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto10 line144 CreateInstance arg-slot fix A12->A13, A13->A14, A14->A15");
+
+      /* Same InstallYinjian chain has a second CreateInstance call segment
+         immediately after line144; align its arg slots to FR2 reference:
+         MOV A15<-A11; CALL A12 C3; TGETS A13; MOV A15<-A9; KSHORT A16; CALL A13 C3. */
+      if (p + 9 < numbc) {
+        uint8_t *s2 = buf + bc_pos + (size_t)(p + 2) * 4;
+        uint8_t *s3 = buf + bc_pos + (size_t)(p + 3) * 4;
+        uint8_t *s4 = buf + bc_pos + (size_t)(p + 4) * 4;
+        uint8_t *s5 = buf + bc_pos + (size_t)(p + 5) * 4;
+        uint8_t *s6 = buf + bc_pos + (size_t)(p + 6) * 4;
+        uint8_t *s7 = buf + bc_pos + (size_t)(p + 7) * 4;
+        uint8_t *s8 = buf + bc_pos + (size_t)(p + 8) * 4;
+        uint8_t *s9 = buf + bc_pos + (size_t)(p + 9) * 4;
+        BCIns j2 = (BCIns)tolua_read_ins(s2, be);
+        BCIns j3 = (BCIns)tolua_read_ins(s3, be);
+        BCIns j4 = (BCIns)tolua_read_ins(s4, be);
+        BCIns j5 = (BCIns)tolua_read_ins(s5, be);
+        BCIns j6 = (BCIns)tolua_read_ins(s6, be);
+        BCIns j7 = (BCIns)tolua_read_ins(s7, be);
+        BCIns j8 = (BCIns)tolua_read_ins(s8, be);
+        BCIns j9 = (BCIns)tolua_read_ins(s9, be);
+        BCOp o2 = bc_op(j2), o3 = bc_op(j3), o4 = bc_op(j4), o5 = bc_op(j5);
+        BCOp o6 = bc_op(j6), o7 = bc_op(j7), o8 = bc_op(j8), o9 = bc_op(j9);
+
+        if (o2 == BC_MOV && bc_a(j2) == 14 && bc_d(j2) == 10 &&
+            o3 == BC_TGETS && bc_a(j3) == 12 && bc_b(j3) == 10 &&
+            o4 == BC_MOV && bc_a(j4) == 16 && bc_d(j4) == 11 &&
+            o5 == BC_CALL && bc_a(j5) == 12 && bc_b(j5) == 2 && bc_c(j5) == 3 &&
+            o6 == BC_TGETS && bc_a(j6) == 13 && bc_b(j6) == 0 &&
+            o7 == BC_MOV && bc_a(j7) == 16 && bc_d(j7) == 9 &&
+            o8 == BC_KSHORT && bc_a(j8) == 17 &&
+            o9 == BC_CALL && bc_a(j9) == 13 && bc_b(j9) == 2 && bc_c(j9) == 3) {
+          setbc_a(&j4, 15);
+          tolua_write_ins(s4, (uint32_t)j4, be);
+          setbc_a(&j7, 15);
+          tolua_write_ins(s7, (uint32_t)j7, be);
+          setbc_a(&j8, 16);
+          tolua_write_ins(s8, (uint32_t)j8, be);
+          TOLUA_REPACK_LOG(ctx, p + 9,
+                           "apply proto10 line147 CreateInstance arg-slot fix MOV/KSHORT A16/A17 -> A15/A16");
+        }
+      }
+      break;
+    }
+
+    /* Keep line147/line146 fixes independent from line144 matching.
+       In current inputs line144 may already be partially aligned by earlier
+       generic passes, so the strict line144 pattern above can legitimately
+       miss while line147 still needs correction. */
+    for (p = 3; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCOp cop = bc_op(c);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCOp o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+
+      /* line147: TGETS A13 ... ; MOV A16<-A9 ; KSHORT A17 ; CALL A13 C3
+         -> shift to MOV A15 / KSHORT A16. */
+      if (cop == BC_CALL && bc_a(c) == 13 && bc_b(c) == 2 && bc_c(c) == 3 &&
+          o1 == BC_KSHORT && bc_a(i1) == 17 &&
+          o2 == BC_MOV && bc_a(i2) == 16 && bc_d(i2) == 9 &&
+          o3 == BC_TGETS && bc_a(i3) == 13 && bc_b(i3) == 0) {
+        setbc_a(&i2, 15);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+        setbc_a(&i1, 16);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+        TOLUA_REPACK_LOG(ctx, p,
+                         "apply proto10 independent line147 CreateInstance fix MOV/KSHORT A16/A17 -> A15/A16");
+      }
+
+      /* line146: MOV A16<-A11 ; CALL A12 C3
+         -> shift MOV result slot back to A15 to match FR2 call frame. */
+      if (cop == BC_CALL && bc_a(c) == 12 && bc_b(c) == 2 && bc_c(c) == 3 &&
+          o1 == BC_MOV && bc_a(i1) == 16 && bc_d(i1) == 11 &&
+          o2 == BC_TGETS && bc_a(i2) == 12 && bc_b(i2) == 10 &&
+          o3 == BC_MOV && bc_a(i3) == 14 && bc_d(i3) == 10) {
+        setbc_a(&i1, 15);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+        TOLUA_REPACK_LOG(ctx, p,
+                         "apply proto10 independent line146 CreateInstance fix MOV A16 -> A15");
+      }
+    }
+
+    /* Later InstallYinjian CreateInstance chains repeat the same shape as
+       line144, but with the inner Type:GetType() already moved onto the
+       outer arg slot. The remaining bug is that the implicit self still sits
+       on the literal slot (A+3) instead of the FR2 one-arg call slot (A+4). */
+    for (p = 4; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCOp cop = bc_op(c);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCOp o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCReg outer_base = bc_a(c);
+      BCReg producer_base = (BCReg)(outer_base + 2);
+
+      if (cop != BC_CALL || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_KSHORT || bc_a(i1) != (BCReg)(outer_base + 3)) continue;
+      if (o2 != BC_CALL || bc_a(i2) != producer_base || bc_b(i2) != 2 || bc_c(i2) != 2) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != producer_base) continue;
+      if (o4 != BC_MOV || bc_a(i4) != (BCReg)(outer_base + 3) || bc_d(i4) != bc_b(i3)) continue;
+
+      setbc_a(&i4, (BCReg)(outer_base + 4));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(outer_base + 4), ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto10 CreateInstance producer-self fix outer=%u producer=%u self A%u->A%u",
+                       (unsigned int)outer_base, (unsigned int)producer_base,
+                       (unsigned int)(outer_base + 3), (unsigned int)(outer_base + 4));
+    }
+
+    /* MakeGenericMethod(typeArray):Invoke(nil, objArray) has the same FR2
+       issue twice in a row: the method self/args are still packed on A+1..,
+       while the function slot has already moved to A. Shift the argument
+       carriers one step right for both chained method calls. */
+    for (p = 8; p + 1 < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns n1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p + 1) * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCOp cop = bc_op(c), nop = bc_op(n1), o1 = bc_op(i1), o2 = bc_op(i2);
+      BCOp o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+      BCOp o7 = bc_op(i7), o8 = bc_op(i8);
+      BCReg call_base = bc_a(c);
+
+      if (cop != BC_CALL || bc_b(c) != 0 || bc_c(c) != 4) continue;
+      if (nop != BC_CALLM || bc_a(n1) != (BCReg)(call_base - 2) || bc_b(n1) != 2 || bc_c(n1) != 0) continue;
+      if (o1 != BC_MOV || bc_a(i1) != (BCReg)(call_base + 3)) continue;
+      if (!(o2 == BC_KPRI || o2 == BC_KSHORT || o2 == BC_KNUM || o2 == BC_KSTR || o2 == BC_KNIL) ||
+          bc_a(i2) != (BCReg)(call_base + 2)) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != call_base || bc_b(i3) != call_base) continue;
+      if (o4 != BC_MOV || bc_a(i4) != (BCReg)(call_base + 1) || bc_d(i4) != call_base) continue;
+      if (o5 != BC_CALL || bc_a(i5) != call_base || bc_b(i5) != 2 || bc_c(i5) != 3) continue;
+      if (o6 != BC_MOV || bc_a(i6) != (BCReg)(call_base + 2)) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != call_base || bc_b(i7) != bc_d(i8)) continue;
+      if (o8 != BC_MOV || bc_a(i8) != (BCReg)(call_base + 1)) continue;
+
+      setbc_a(&i8, (BCReg)(call_base + 2));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 8) * 4, (uint32_t)i8, be);
+      setbc_a(&i6, (BCReg)(call_base + 3));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_a(&i4, (BCReg)(call_base + 2));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i2, (BCReg)(call_base + 3));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, (BCReg)(call_base + 4));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(call_base + 4), ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto10 MakeGenericMethod/Invoke arg-slot fix call=%u self/args A+1.. -> A+2..",
+                       (unsigned int)call_base);
+    }
+  }
+
+  /* proto19 direct CALL window:
+     UGET A14; TGETS A14 D=3614; MOV A15<-A5; TGETV A16<-A9[A13]; CALL A14 C3.
+     Keep this repair strictly local and shape-based. */
+  if (ctx != NULL && ctx->proto_index == 19u) {
+    uint32_t p = 0;
+    for (p = 4; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+
+      if (cop != BC_CALL || bc_a(c) != 14 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_TGETV || bc_a(i1) != 16 || bc_b(i1) != 9 || bc_d(i1) != 2317) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 15 || bc_d(i2) != 5) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 14 || bc_b(i3) != 14 || bc_d(i3) != 3614) continue;
+      if (o4 != BC_UGET || bc_a(i4) != 14 || bc_d(i4) != 1) continue;
+
+      setbc_a(&i2, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 17, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto19 direct CALL window fix MOV/TGETV A15/A16 -> A16/A17");
+      break;
+    }
+
+    /* proto19 caller=532 direct CALL window:
+       UGET A16; TGETS A16 D=4126; MOV A17<-A5; TGETS/TGETV A18<-A11[D=2844][A15]; CALL A16 C3.
+       This exact window still writes args on A+1/A+2, but current arm64 call
+       frames for C=3 need them on A+2/A+3. Shift only this window. */
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (p != 90 || cop != BC_CALL || bc_a(c) != 16 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_TGETV || bc_a(i1) != 18 || bc_b(i1) != 18 || bc_c(i1) != 15) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 18 || bc_b(i2) != 11 || bc_c(i2) != 28) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 17 || bc_d(i3) != 5) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 16 || bc_b(i4) != 16 || bc_c(i4) != 30) continue;
+      if (o5 != BC_UGET || bc_a(i5) != 16 || bc_d(i5) != 1) continue;
+
+      setbc_a(&i3, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 19);
+      setbc_d(&i1, (BCReg)((19u << 8) | 15u));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 19, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto19 caller532 direct CALL window fix MOV/TGETS/TGETV A17/A18 -> A18/A19");
+      break;
+    }
+
+    /* proto19 caller=535 direct CALL window:
+       UGET A16; TGETS A16 D=4126; MOV A17<-A5; TGETS/TGETV A18<-A11[C=31][A15]; CALL A16 C3.
+       Keep this as a separate exact window from caller=532. */
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALL || bc_a(c) != 16 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_TGETV || bc_a(i1) != 18 || bc_b(i1) != 18 || bc_c(i1) != 15) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 18 || bc_b(i2) != 11 || bc_c(i2) != 31) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 17 || bc_d(i3) != 5) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 16 || bc_b(i4) != 16 || bc_c(i4) != 30) continue;
+      if (o5 != BC_UGET || bc_a(i5) != 16 || bc_d(i5) != 1) continue;
+
+      setbc_a(&i3, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 19);
+      setbc_d(&i1, (BCReg)((19u << 8) | 15u));
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 19, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto19 caller535 direct CALL window fix MOV/TGETS/TGETV A17/A18 -> A18/A19");
+      break;
     }
   }
 
@@ -9699,25 +10212,22 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
                          strstr(name, "migong.lua") != NULL);
       char *patched = NULL;
 
-      if (!tolua_bytecode_build_logged) {
-        tolua_emitlog("[tolua-bytecode] build=%s runtime_fr2=%d", tolua_bytecode_build_tag, target_fr2);
-        tolua_bytecode_build_logged = 1;
-      }
+      (void)tolua_bytecode_build_logged;
       patched = tolua_convertbytecodeex(buff, sz, target_fr2, &patched_sz, &conv_status);
       if (patched != NULL) {
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
         if (trace_chunk) {
-          tolua_emitlog("[tolua-bytecode] build=%s conv_ok name=%s src=%d out=%d",
-                        tolua_bytecode_build_tag, name != NULL ? name : "<null>", sz, patched_sz);
+          tolua_emitlog("[tolua-bytecode] conv_ok name=%s src=%d out=%d",
+                        name != NULL ? name : "<null>", sz, patched_sz);
         }
         free(patched);
       } else {
         const char *conv_detail = tolua_getlastbytecodedebug();
         const char *conv_name = tolua_getbytecodeerrorstr(conv_status);
         if (trace_chunk) {
-          tolua_emitlog("[tolua-bytecode] build=%s conv_fail name=%s err=%s detail=%s",
-                        tolua_bytecode_build_tag, name != NULL ? name : "<null>",
+          tolua_emitlog("[tolua-bytecode] conv_fail name=%s err=%s detail=%s",
+                        name != NULL ? name : "<null>",
                         conv_name != NULL ? conv_name : "unknown",
                         (conv_detail != NULL && conv_detail[0] != '\0') ? conv_detail : "conversion failed");
         }

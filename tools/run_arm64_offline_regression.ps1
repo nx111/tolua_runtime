@@ -427,6 +427,236 @@ function Test-AttackLogicExtend3ArgShift([string]$repoRootWsl, [string]$bytecode
     }
 }
 
+function Test-AttackLogicRoleValuesArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 389 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto389 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $specs = @(
+        @{ first = 815; second = 816; fnew = 817; tag = 'atk-8783' },
+        @{ first = 818; second = 819; fnew = 820; tag = 'def-8795' },
+        @{ first = 818; second = 821; fnew = 822; tag = 'def-8824' },
+        @{ first = 818; second = 824; fnew = 825; tag = 'def-8854' },
+        @{ first = 815; second = 569; fnew = 826; tag = 'atk-8891' },
+        @{ first = 818; second = 683; fnew = 827; tag = 'def-8912' }
+    )
+
+    $goodTags = New-Object System.Collections.Generic.HashSet[string]
+    $badTags = New-Object System.Collections.Generic.List[string]
+    $weirdTags = New-Object System.Collections.Generic.List[string]
+    for ($idx = 6; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+        $i4 = $rows[$idx - 4]
+        $i5 = $rows[$idx - 5]
+        $i6 = $rows[$idx - 6]
+
+        if ($c.op -ne 'CALL' -or $c.a -ne 36 -or $c.b -ne 1 -or $c.c -ne 5) {
+            continue
+        }
+        if (-not ($i5.op -eq 'TGETS' -and $i5.a -eq 36 -and $i5.b -eq 36 -and $i5.c -eq 49 -and $i5.d -eq 9265)) {
+            continue
+        }
+        if (-not ($i6.op -eq 'GGET' -and $i6.a -eq 36 -and $i6.d -eq 34)) {
+            continue
+        }
+
+        foreach ($spec in $specs) {
+            $badMatch = (
+                $i4.op -eq 'KSTR' -and $i4.a -eq 37 -and $i4.d -eq $spec.first -and
+                $i3.op -eq 'KSTR' -and $i3.a -eq 38 -and $i3.d -eq $spec.second -and
+                $i2.op -eq 'KPRI' -and $i2.a -eq 39 -and $i2.d -eq 1 -and
+                $i1.op -eq 'FNEW' -and $i1.a -eq 40 -and $i1.d -eq $spec.fnew
+            )
+            if ($badMatch) {
+                $badTags.Add("$($spec.tag)@pc=$($c.pc)")
+                break
+            }
+
+            $goodMatch = (
+                $i4.op -eq 'KSTR' -and $i4.a -eq 38 -and $i4.d -eq $spec.first -and
+                $i3.op -eq 'KSTR' -and $i3.a -eq 39 -and $i3.d -eq $spec.second -and
+                $i2.op -eq 'KPRI' -and $i2.a -eq 40 -and $i2.d -eq 1 -and
+                $i1.op -eq 'FNEW' -and $i1.a -eq 41 -and $i1.d -eq $spec.fnew
+            )
+            if ($goodMatch) {
+                [void]$goodTags.Add($spec.tag)
+                break
+            }
+
+            $weirdMatch = (
+                $i4.op -eq 'KSTR' -and $i4.d -eq $spec.first -and
+                $i3.op -eq 'KSTR' -and $i3.d -eq $spec.second -and
+                $i1.op -eq 'FNEW' -and $i1.d -eq $spec.fnew
+            )
+            if ($weirdMatch) {
+                $weirdTags.Add("$($spec.tag)@pc=$($c.pc) got=A$($i4.a)/A$($i3.a)/A$($i2.a)/A$($i1.a)")
+                break
+            }
+        }
+    }
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badTags.Count -ne 0) {
+        $fails.Add("residual bad rolevalues root C5 windows: " + ($badTags -join ','))
+    }
+    if ($weirdTags.Count -ne 0) {
+        $fails.Add("unexpected rolevalues root C5 windows: " + ($weirdTags -join ','))
+    }
+    foreach ($spec in $specs) {
+        if (-not $goodTags.Contains($spec.tag)) {
+            $fails.Add("missing corrected rolevalues root C5 window $($spec.tag)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicRoleValuesLogShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 365 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto365 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $badPcs = New-Object System.Collections.Generic.List[int]
+    $goodPcs = New-Object System.Collections.Generic.List[int]
+    $weirdPcs = New-Object System.Collections.Generic.List[string]
+    for ($idx = 11; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+        $i4 = $rows[$idx - 4]
+        $i5 = $rows[$idx - 5]
+        $i6 = $rows[$idx - 6]
+        $i7 = $rows[$idx - 7]
+        $i8 = $rows[$idx - 8]
+        $i9 = $rows[$idx - 9]
+        $i10 = $rows[$idx - 10]
+        $i11 = $rows[$idx - 11]
+
+        if ($c.op -ne 'CALL' -or $c.a -ne 15 -or $c.b -ne 1 -or $c.c -ne 3) {
+            continue
+        }
+        if (-not ($i10.op -eq 'TGETS' -and $i10.a -eq 15 -and $i10.b -eq 7 -and $i10.c -eq 42 -and $i10.d -eq 1834)) {
+            continue
+        }
+
+        $badMatch = (
+            $i11.op -eq 'MOV'   -and $i11.a -eq 16 -and $i11.d -eq 7 -and
+            $i9.op  -eq 'TGETS' -and $i9.a  -eq 17 -and $i9.b  -eq 6  -and $i9.c  -eq 43 -and $i9.d  -eq 1579 -and
+            $i8.op  -eq 'TGETS' -and $i8.a  -eq 17 -and $i8.b  -eq 17 -and $i8.c  -eq 9  -and $i8.d  -eq 4361 -and
+            $i7.op  -eq 'KSTR'  -and $i7.a  -eq 18 -and $i7.d  -eq 63 -and
+            $i6.op  -eq 'GGET'  -and $i6.a  -eq 19 -and $i6.d  -eq 17 -and
+            $i5.op  -eq 'TGETS' -and $i5.a  -eq 19 -and $i5.b  -eq 19 -and $i5.c  -eq 64 -and $i5.d  -eq 4928 -and
+            $i4.op  -eq 'SUBNV' -and $i4.a  -eq 21 -and $i4.b  -eq 14 -and $i4.d  -eq 3584 -and
+            $i3.op  -eq 'CALL'  -and $i3.a  -eq 19 -and $i3.b  -eq 2  -and $i3.c  -eq 2  -and
+            $i2.op  -eq 'KSTR'  -and $i2.a  -eq 20 -and $i2.d  -eq 65 -and
+            $i1.op  -eq 'CAT'   -and $i1.a  -eq 17 -and $i1.b  -eq 17 -and $i1.c  -eq 20 -and $i1.d  -eq 4372
+        )
+        if ($badMatch) {
+            $badPcs.Add($c.pc)
+            continue
+        }
+
+        $goodMatch = (
+            $i11.op -eq 'MOV'   -and $i11.a -eq 17 -and $i11.d -eq 7 -and
+            $i9.op  -eq 'TGETS' -and $i9.a  -eq 18 -and $i9.b  -eq 6  -and $i9.c  -eq 43 -and $i9.d  -eq 1579 -and
+            $i8.op  -eq 'TGETS' -and $i8.a  -eq 18 -and $i8.b  -eq 18 -and $i8.c  -eq 9  -and $i8.d  -eq 4617 -and
+            $i7.op  -eq 'KSTR'  -and $i7.a  -eq 19 -and $i7.d  -eq 63 -and
+            $i6.op  -eq 'GGET'  -and $i6.a  -eq 20 -and $i6.d  -eq 17 -and
+            $i5.op  -eq 'TGETS' -and $i5.a  -eq 20 -and $i5.b  -eq 20 -and $i5.c  -eq 64 -and $i5.d  -eq 5184 -and
+            $i4.op  -eq 'SUBNV' -and $i4.a  -eq 22 -and $i4.b  -eq 14 -and $i4.d  -eq 3584 -and
+            $i3.op  -eq 'CALL'  -and $i3.a  -eq 20 -and $i3.b  -eq 2  -and $i3.c  -eq 2  -and
+            $i2.op  -eq 'KSTR'  -and $i2.a  -eq 21 -and $i2.d  -eq 65 -and
+            $i1.op  -eq 'CAT'   -and $i1.a  -eq 18 -and $i1.b  -eq 18 -and $i1.c  -eq 21 -and $i1.d  -eq 4629
+        )
+        if ($goodMatch) {
+            $goodPcs.Add($c.pc)
+            continue
+        }
+
+        $weirdPrefix = (
+            $i11.op -eq 'MOV'   -and $i11.d -eq 7 -and
+            $i9.op  -eq 'TGETS' -and $i9.b  -eq 6  -and $i9.c  -eq 43 -and
+            $i8.op  -eq 'TGETS' -and $i8.c  -eq 9 -and
+            $i7.op  -eq 'KSTR'  -and $i7.d  -eq 63 -and
+            $i6.op  -eq 'GGET'  -and $i6.d  -eq 17 -and
+            $i2.op  -eq 'KSTR'  -and $i2.d  -eq 65 -and
+            $i1.op  -eq 'CAT'
+        )
+        if ($weirdPrefix) {
+            $weirdPcs.Add("pc=$($c.pc) got=MOVA$($i11.a)/TGETSA$($i9.a)/TGETSA$($i8.a)/KSTRA$($i7.a)/GGETA$($i6.a)/CALLA$($i3.a)/KSTRA$($i2.a)/CATA$($i1.a)")
+        }
+    }
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badPcs.Count -ne 0) {
+        $fails.Add("residual bad rolevalues bf.Log window at CALL pc=" + ($badPcs -join ','))
+    }
+    if ($weirdPcs.Count -ne 0) {
+        $fails.Add("unexpected rolevalues bf.Log windows: " + ($weirdPcs -join ';'))
+    }
+    if ($goodPcs.Count -eq 0) {
+        $fails.Add("missing corrected rolevalues bf.Log window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicTempValueHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -626,6 +856,26 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $roleValuesShapeDis = Join-Path $outAbs "attacklogic.proto389.rolevalues.dis.txt"
+    $roleValuesShapeCheck = Test-AttackLogicRoleValuesArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $roleValuesShapeDis
+    $roleValuesShapeFailures = @($roleValuesShapeCheck.failures).Count
+    if (-not $roleValuesShapeCheck.ok) {
+        $failed = $true
+        foreach ($msg in $roleValuesShapeCheck.failures) {
+            Write-Warning "[attacklogic rolevalues shape] $msg"
+        }
+    }
+
+    $roleValuesLogDis = Join-Path $outAbs "attacklogic.proto365.rolevalueslog.dis.txt"
+    $roleValuesLogCheck = Test-AttackLogicRoleValuesLogShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $roleValuesLogDis
+    $roleValuesLogFailures = @($roleValuesLogCheck.failures).Count
+    if (-not $roleValuesLogCheck.ok) {
+        $failed = $true
+        foreach ($msg in $roleValuesLogCheck.failures) {
+            Write-Warning "[attacklogic rolevalues bf.log shape] $msg"
+        }
+    }
+
     $harnessLog = Join-Path $outAbs "attacklogic.tempvalue.log"
     $harnessCheck = Test-AttackLogicTempValueHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $harnessLog
     $harnessFailures = if ($harnessCheck.ok) { 0 } else { 1 }
@@ -666,6 +916,8 @@ if (Test-Path $attacklogicPath) {
         rest_fail             = 0
         tempvalue_shape_fail  = $shapeFailures
         extend3_shape_fail    = $extend3ShapeFailures
+        rolevalues_shape_fail = $roleValuesShapeFailures
+        rolevalues_log_fail   = $roleValuesLogFailures
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
         log_path              = $logPath
@@ -688,6 +940,12 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'extend3_shape_fail' -and $row.extend3_shape_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'rolevalues_shape_fail' -and $row.rolevalues_shape_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'rolevalues_log_fail' -and $row.rolevalues_log_fail -ne 0) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'tempvalue_fail' -and $row.tempvalue_fail -ne 0) {

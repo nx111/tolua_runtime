@@ -58,7 +58,7 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-battle-getbuff-deletebuff-slice";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto153-wushuang-log";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)

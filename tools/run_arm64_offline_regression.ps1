@@ -272,6 +272,64 @@ function Test-BattleRestHuanhunMinHarness([string]$repoRootWsl, [string]$bytecod
     }
 }
 
+function Test-BattleRestHuanhunMinShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 192 144 151 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto192 144..151 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 144; op = "GGET";  a = 6; b = 0; c = 35; d = 35;   tag = "pc144" },
+        @{ pc = 145; op = "TGETS"; a = 6; b = 6; c = 36; d = 1572; tag = "pc145" },
+        @{ pc = 146; op = "TGETS"; a = 8; b = 1; c = 24; d = 280;  tag = "pc146" },
+        @{ pc = 147; op = "TGETS"; a = 9; b = 1; c = 23; d = 279;  tag = "pc147" },
+        @{ pc = 148; op = "SUBVV"; a = 8; b = 8; c = 9;  d = 2057; tag = "pc148" },
+        @{ pc = 149; op = "MULVN"; a = 8; b = 8; c = 5;  d = 2053; tag = "pc149" },
+        @{ pc = 150; op = "MULVN"; a = 9; b = 5; c = 6;  d = 1286; tag = "pc150" },
+        @{ pc = 151; op = "CALL";  a = 6; b = 2; c = 3;  d = 515;  tag = "pc151" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-BattleRestBuffHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -410,6 +468,76 @@ function Test-BattleBeforeSkillAnimationCallbackHarness([string]$repoRootWsl, [s
     $runCmd = @(
         "cd '$repoRootWsl'",
         "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_beforeskillanimation_callback > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-BattleBeforeSkillAnimationWushuangShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 153 13 19 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto153 13..19 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 13; op = "MOV";   a = 8;  b = 0; c = 0;  d = 0;    tag = "pc13" },
+        @{ pc = 14; op = "TGETS"; a = 6;  b = 0; c = 4;  d = 4;    tag = "pc14" },
+        @{ pc = 15; op = "KSTR";  a = 9;  b = 0; c = 5;  d = 5;    tag = "pc15" },
+        @{ pc = 16; op = "MOV";   a = 10; b = 0; c = 5;  d = 5;    tag = "pc16" },
+        @{ pc = 17; op = "KSTR";  a = 11; b = 0; c = 6;  d = 6;    tag = "pc17" },
+        @{ pc = 18; op = "CAT";   a = 9;  b = 9; c = 11; d = 2315; tag = "pc18" },
+        @{ pc = 19; op = "CALL";  a = 6;  b = 1; c = 3;  d = 259;  tag = "pc19" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BattleBeforeSkillAnimationWushuangHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_beforeskillanimation_wushuanglog > '$logWsl' 2>&1"
     ) -join " && "
     $code = Invoke-WslBash $runCmd
     return [pscustomobject]@{
@@ -2998,6 +3126,16 @@ foreach ($name in $targets) {
             }
         }
 
+        $restHuanhunDis = Join-Path $outAbs "battle.proto192.huanhun_mincall.dis.txt"
+        $restHuanhunShapeCheck = Test-BattleRestHuanhunMinShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $restHuanhunDis
+        $restHuanhunShapeFailures = @($restHuanhunShapeCheck.failures).Count
+        if (-not $restHuanhunShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $restHuanhunShapeCheck.failures) {
+                Write-Warning "[battle rest huanhun shape] $msg"
+            }
+        }
+
         $restHuanhunLog = Join-Path $outAbs "battle.rest_huanhun_mincall.log"
         $restHuanhunHarnessCheck = Test-BattleRestHuanhunMinHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $restHuanhunLog
         $restHuanhunHarnessFailures = if ($restHuanhunHarnessCheck.ok) { 0 } else { 1 }
@@ -3120,7 +3258,25 @@ foreach ($name in $targets) {
             Write-Warning "[battle beforeskillanimation harness] failed exit=$($beforeSkillAnimationHarnessCheck.exit_code): $beforeSkillAnimationLog"
         }
 
-        $beforeSkillAnimationFailures = $beforeSkillAnimationShapeFailures + $beforeSkillAnimationHarnessFailures
+        $beforeSkillAnimationWushuangDis = Join-Path $outAbs "battle.proto153.beforeskillanimation_wushuang.dis.txt"
+        $beforeSkillAnimationWushuangShapeCheck = Test-BattleBeforeSkillAnimationWushuangShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationWushuangDis
+        $beforeSkillAnimationWushuangShapeFailures = @($beforeSkillAnimationWushuangShapeCheck.failures).Count
+        if (-not $beforeSkillAnimationWushuangShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $beforeSkillAnimationWushuangShapeCheck.failures) {
+                Write-Warning "[battle beforeskillanimation wushuang shape] $msg"
+            }
+        }
+
+        $beforeSkillAnimationWushuangLog = Join-Path $outAbs "battle.beforeskillanimation_wushuang.log"
+        $beforeSkillAnimationWushuangHarnessCheck = Test-BattleBeforeSkillAnimationWushuangHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $beforeSkillAnimationWushuangLog
+        $beforeSkillAnimationWushuangHarnessFailures = if ($beforeSkillAnimationWushuangHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $beforeSkillAnimationWushuangHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle beforeskillanimation wushuang harness] failed exit=$($beforeSkillAnimationWushuangHarnessCheck.exit_code): $beforeSkillAnimationWushuangLog"
+        }
+
+        $beforeSkillAnimationFailures = $beforeSkillAnimationShapeFailures + $beforeSkillAnimationHarnessFailures + $beforeSkillAnimationWushuangShapeFailures + $beforeSkillAnimationWushuangHarnessFailures
     }
 
     if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {

@@ -1576,11 +1576,26 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
     BCOp prev1_op = bc_op(prev1);
     BCOp prev2_op = bc_op(prev2);
     BCReg base = bc_a(consumer_ins);
+    int method_like_self_seed = 0;
+
+    /* Exclude zero-arg method-style self forwarding from the direct
+       passthrough fast-path:
+       MOV self<-obj; TGET* func<-obj[method]; CALL(C=2)
+       FR2 still needs the empty slot between func and self here. Keeping the
+       FR1 layout makes native method calls see the wrong self object. */
+    if ((prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB) &&
+        bc_op(prev2) == BC_MOV &&
+        bc_a(prev1) == base &&
+        bc_a(prev2) == old_first &&
+        bc_b(prev1) == bc_d(prev2)) {
+      method_like_self_seed = 1;
+    }
 
     /* Keep one-arg direct passthrough calls as-is:
        MOV arg1<-param; (TGET*|UGET|GGET) func<-param; CALL(C=2).
        Re-shifting this shape can misroute untouched caller params into locals. */
-    if (tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
+    if (!method_like_self_seed &&
+        tolua_reg_is_passthrough_seed_before_pc(buf, bc_pos, be, pc, bc_d(prev2)) &&
         bc_op(prev2) == BC_MOV &&
         bc_a(prev2) == old_first &&
         (prev1_op == BC_TGETS || prev1_op == BC_TGETV || prev1_op == BC_TGETB ||

@@ -272,6 +272,19 @@ function Test-BattleRestHuanhunMinHarness([string]$repoRootWsl, [string]$bytecod
     }
 }
 
+function Test-BattleRestBuffHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_rest_buffprobe > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-BattleRegisterWorkflowForSkillsEntryShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -598,6 +611,60 @@ function Test-BattleBeforeRoleActionHasBuffShape([string]$repoRootWsl, [string]$
         @{ pc = 1148; op = "TGETS";  a = 15; b = 1;   c = 49; d = 305;   tag = "pc1148" },
         @{ pc = 1149; op = "MOV";    a = 18; b = 0;   c = 14; d = 14;    tag = "pc1149" },
         @{ pc = 1150; op = "CALL";   a = 15; b = 2;   c = 3;  d = 515;   tag = "pc1150" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BattleBeforeRoleActionGetBuffShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1154 1157 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto132 1154..1157 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 1154; op = "MOV";   a = 17; b = 0; c = 1;   d = 1;   tag = "pc1154" },
+        @{ pc = 1155; op = "TGETS"; a = 15; b = 1; c = 105; d = 361; tag = "pc1155" },
+        @{ pc = 1156; op = "MOV";   a = 18; b = 0; c = 14;  d = 14;  tag = "pc1156" },
+        @{ pc = 1157; op = "CALL";  a = 15; b = 2; c = 3;   d = 515; tag = "pc1157" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -2939,7 +3006,15 @@ foreach ($name in $targets) {
             Write-Warning "[battle rest huanhun] harness failed exit=$($restHuanhunHarnessCheck.exit_code): $restHuanhunLog"
         }
 
-        $restHarnessFailures += ($restHuanhunShapeFailures + $restHuanhunHarnessFailures)
+        $restBuffLog = Join-Path $outAbs "battle.rest_buffprobe.log"
+        $restBuffHarnessCheck = Test-BattleRestBuffHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $restBuffLog
+        $restBuffHarnessFailures = if ($restBuffHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $restBuffHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle rest buffprobe] harness failed exit=$($restBuffHarnessCheck.exit_code): $restBuffLog"
+        }
+
+        $restHarnessFailures += ($restHuanhunShapeFailures + $restHuanhunHarnessFailures + $restBuffHarnessFailures)
 
         $beforeRoleActionDis = Join-Path $outAbs "battle.proto132.beforeroleaction_mincall.dis.txt"
         $beforeRoleActionShapeCheck = Test-BattleBeforeRoleActionMinCallShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionDis
@@ -2966,6 +3041,16 @@ foreach ($name in $targets) {
             $failed = $true
             foreach ($msg in $beforeRoleActionHasBuffCheck.failures) {
                 Write-Warning "[battle beforeroleaction hasbuff] $msg"
+            }
+        }
+
+        $beforeRoleActionGetBuffDis = Join-Path $outAbs "battle.proto132.beforeroleaction_getbuff.dis.txt"
+        $beforeRoleActionGetBuffCheck = Test-BattleBeforeRoleActionGetBuffShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionGetBuffDis
+        $beforeRoleActionGetBuffFailures = @($beforeRoleActionGetBuffCheck.failures).Count
+        if (-not $beforeRoleActionGetBuffCheck.ok) {
+            $failed = $true
+            foreach ($msg in $beforeRoleActionGetBuffCheck.failures) {
+                Write-Warning "[battle beforeroleaction getbuff] $msg"
             }
         }
 
@@ -3015,7 +3100,7 @@ foreach ($name in $targets) {
             Write-Warning "[battle beforeroleaction logprobe] failed exit=$($beforeRoleActionLogHarnessCheck.exit_code): $beforeRoleActionLogProbe"
         }
 
-        $beforeRoleActionFailures = $beforeRoleActionShapeFailures + $beforeRoleActionHarnessFailures + $beforeRoleActionHasBuffFailures + $beforeRoleActionNeedRefreshFailures + $minusSkillCdShapeFailures + $minusSkillCdHarnessFailures + $beforeRoleActionLogShapeFailures + $beforeRoleActionLogHarnessFailures
+        $beforeRoleActionFailures = $beforeRoleActionShapeFailures + $beforeRoleActionHarnessFailures + $beforeRoleActionHasBuffFailures + $beforeRoleActionGetBuffFailures + $beforeRoleActionNeedRefreshFailures + $minusSkillCdShapeFailures + $minusSkillCdHarnessFailures + $beforeRoleActionLogShapeFailures + $beforeRoleActionLogHarnessFailures
 
         $beforeSkillAnimationDis = Join-Path $outAbs "battle.proto177.beforeskillanimation.dis.txt"
         $beforeSkillAnimationShapeCheck = Test-BattleBeforeSkillAnimationCallbackShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationDis

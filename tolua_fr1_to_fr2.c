@@ -2562,6 +2562,46 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
   have_new = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, new_reg,
                                            &new_writer_pc, &new_writer_op, &new_writer_ins);
   if (!have_old || !have_new) return 1;
+  if (ctx != NULL && ctx->proto_index == 132u && pc >= 3) {
+    BCIns consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+
+    if (bc_op(consumer) == BC_CALL &&
+        bc_a(consumer) == 15 && bc_b(consumer) == 2 && bc_c(consumer) == 3 &&
+        bc_op(prev1) == BC_MOV && bc_a(prev1) == 17 && bc_d(prev1) == 14 &&
+        bc_op(prev2) == BC_TGETS && bc_a(prev2) == 15 && bc_b(prev2) == 1 && bc_c(prev2) == 105 && bc_d(prev2) == 361 &&
+        bc_op(prev3) == BC_MOV && bc_a(prev3) == 16 && bc_d(prev3) == 1) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: proto132 GetBuff method self window old=[%u,%u] new=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last);
+      return 0;
+    }
+  }
+  if (ctx != NULL && ctx->proto_index == 179u && pc >= 5) {
+    BCIns consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+    BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+    BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+    BCIns prev4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+    BCIns prev5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+
+    if (bc_op(consumer) == BC_CALL &&
+        bc_a(consumer) == 9 && bc_b(consumer) == 1 && bc_c(consumer) == 3 &&
+        bc_op(prev1) == BC_MOV && bc_a(prev1) == 11 && bc_d(prev1) == 8 &&
+        bc_op(prev2) == BC_TGETS && bc_a(prev2) == 9 && bc_b(prev2) == 1 && bc_c(prev2) == 3 && bc_d(prev2) == 259 &&
+        bc_op(prev3) == BC_MOV && bc_a(prev3) == 10 && bc_d(prev3) == 1 &&
+        bc_op(prev4) == BC_JMP && bc_a(prev4) == 10 && bc_d(prev4) == 32783 &&
+        bc_op(prev5) == BC_ISF && bc_a(prev5) == 0 && bc_c(prev5) == 9 && bc_d(prev5) == 9) {
+      TOLUA_REPACK_LOG(ctx, pc,
+                       "reject existing FR2 slice: proto179 Rest DeleteBuff method self window old=[%u,%u] new=[%u,%u]",
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)new_last);
+      return 0;
+    }
+  }
   if (old_last > old_first) {
     have_old_next = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, (BCReg)(old_reg + 1),
                                                   &old_next_writer_pc, &old_next_writer_op, &old_next_writer_ins);

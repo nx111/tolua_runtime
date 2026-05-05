@@ -2,6 +2,7 @@
 
 最后更新：2026-05-05 15:08
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
+重启会话入口：见 [FR2_RESTART.md](E:/Games/work/tolua_runtime_master/docs/FR2_RESTART.md)。
 
 ## 1. 当前目标
 

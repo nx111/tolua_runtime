@@ -234,6 +234,65 @@ static int run_buff_onroundbuff_maxcall_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_buff_onroundbuff_maxcall");
 }
 
+static int run_buff_onroundbuff_recoverymin_harness(lua_State *L)
+{
+  const char *harness =
+      "local raw_math_min = math.min\n"
+      "math.min = function(...)\n"
+      "  local argc = select('#', ...)\n"
+      "  local a1 = select(1, ...)\n"
+      "  local a2 = select(2, ...)\n"
+      "  if argc >= 2 and (type(a1) ~= 'number' or type(a2) ~= 'number') then\n"
+      "    local info = debug.getinfo(2, 'l') or {}\n"
+      "    error('__BUFF_RECOVERY_MIN_BAD__ line=' .. tostring(info.currentline) .. ' a1=' .. type(a1) .. ':' .. tostring(a1) .. ' a2=' .. type(a2) .. ':' .. tostring(a2), 0)\n"
+      "  end\n"
+      "  return raw_math_min(...)\n"
+      "end\n"
+      "BattleUtil = BattleUtil or {}\n"
+      "RuntimeData = RuntimeData or {}\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.Round = 3\n"
+      "Color = Color or { red = 'red', green = 'green', yellow = 'yellow', blue = 'blue' }\n"
+      "function BattleUtil.GetRrevRole(owner)\n"
+      "  return {}\n"
+      "end\n"
+      "local bf = {}\n"
+      "function bf:Log(msg)\n"
+      "  local info = debug.getinfo(2, 'l') or {}\n"
+      "  assert(self == bf, 'bf.Log line=' .. tostring(info.currentline) .. ' self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log line=' .. tostring(info.currentline) .. ' msg=' .. type(msg))\n"
+      "end\n"
+      "local role = {\n"
+      "  Attributes = { gengu = 40 },\n"
+      "  AttributesFinal = { gengu = 60 }\n"
+      "}\n"
+      "local owner = {\n"
+      "  Hp = 900,\n"
+      "  MaxHp = 1000,\n"
+      "  Mp = 800,\n"
+      "  MaxMp = 1000,\n"
+      "  Name = 'offline-owner',\n"
+      "  ParentBattleField = bf,\n"
+      "  Role = role\n"
+      "}\n"
+      "function owner:AttackInfo(msg, color)\n"
+      "  assert(self == owner, 'AttackInfo self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'AttackInfo msg=' .. type(msg))\n"
+      "end\n"
+      "function owner:Set_needRefresh()\n"
+      "  assert(self == owner, 'Set_needRefresh self=' .. tostring(self))\n"
+      "end\n"
+      "local function run_case(hp, tag)\n"
+      "  owner.Hp = hp\n"
+      "  local buff = { Name = '恢复', Level = 2, LeftRound = 2, Owner = owner }\n"
+      "  local ok, err = xpcall(function() BUFF_OnRoundBuff(buff, {}) end, debug.traceback)\n"
+      "  if not ok then error('__BUFF_RECOVERY_CASE_BAD__ tag=' .. tag .. ' err=' .. tostring(err), 0) end\n"
+      "end\n"
+      "run_case(500, 'low_hp')\n"
+      "run_case(900, 'high_hp')\n";
+  return dostring(L, harness, "@bcrun_buff_onroundbuff_recoverymin");
+}
+
 static int run_registerprevrole_trigger_harness(lua_State *L)
 {
   const char *harness =
@@ -664,6 +723,161 @@ static int run_battle_beforeroleaction_mincall_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_battle_beforeroleaction_mincall");
 }
 
+static int run_battle_minusskillcd_skilllog_harness(lua_State *L)
+{
+  const char *harness =
+      "local skill = { Name = '测试技能', CurrentCd = 5, UniqueSkills = { Count = 0 } }\n"
+      "local skills = { Count = 1, [0] = skill }\n"
+      "local role = {\n"
+      "  Name = 'offline-role',\n"
+      "  Skills = skills,\n"
+      "  InternalSkills = { Count = 0 }\n"
+      "}\n"
+      "local bf = {}\n"
+      "bf.Log = function(...)\n"
+      "  local argc = select('#', ...)\n"
+      "  local self, msg = ...\n"
+      "  assert(argc == 2, 'bf.Log argc=' .. tostring(argc) .. ' a1=' .. tostring(self) .. ' a2=' .. tostring(msg))\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self) .. ' argc=' .. tostring(argc) .. ' a2=' .. tostring(msg))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg) .. ' argc=' .. tostring(argc))\n"
+      "  error('__MSC_SKILLLOG_OK__', 0)\n"
+      "end\n"
+      "local sprite = { Role = role }\n"
+      "local ok, err = pcall(BattleUtil.MinusSkillCD, bf, sprite, 2, 1)\n"
+      "assert(ok == false, 'MinusSkillCD returned unexpectedly')\n"
+      "assert(string.find(tostring(err), '__MSC_SKILLLOG_OK__', 1, true) ~= nil, 'MinusSkillCD err=' .. tostring(err))\n";
+
+  return dostring(L, harness, "@bcrun_battle_minusskillcd_skilllog");
+}
+
+static int run_battle_beforeroleaction_logprobe_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 3\n"
+      "RuntimeData.Instance.isAttackAnalog = false\n"
+      "BattleUtil.AutoCount = nil\n"
+      "BattleUtil.CheckIfSkillUpgraded = function() return false end\n"
+      "BattleUtil.SetHejiSkill = function() end\n"
+      "BattleUtil.NormalAddBuff = function() end\n"
+      "function Tools.ProbabilityTest() return true end\n"
+      "function Tools.GetRandomInt(a) return a or 1 end\n"
+      "local wf = BattleUtil.GetWorkflowForTalent('BeforeRoleAction')\n"
+      "assert(type(wf) == 'table' and type(wf.callbacks) == 'table', 'wf=' .. type(wf))\n"
+      "local function make_case()\n"
+      "  local role = {\n"
+      "    Name = 'offline-role',\n"
+      "    Level = 30,\n"
+      "    Hp = 100,\n"
+      "    Mp = 20,\n"
+      "    MaxHp = 100,\n"
+      "    MaxMp = 100,\n"
+      "    Skills = { Count = 0 },\n"
+      "    InternalSkills = { Count = 0 },\n"
+      "    SpecialSkills = { Count = 0 },\n"
+      "    EquippedInternalSkill = { Level = 30, UniqueSkills = { Count = 0 } },\n"
+      "    Attributes = { female = 0 },\n"
+      "    AttributesFinal = { bili = 50, shenfa = 50, fuyuan = 50, gengu = 50, dingli = 50 }\n"
+      "  }\n"
+      "  setmetatable(role, {\n"
+      "    __index = function(_, k)\n"
+      "      if k == 'HasTalent' then return function() return false end end\n"
+      "      return 0\n"
+      "    end\n"
+      "  })\n"
+      "  local bf = { SpritesTable = {}, BattleTimestamp = 10 }\n"
+      "  function bf:Log(msg)\n"
+      "    assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "    assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "  end\n"
+      "  function bf:GetZhujueSprite() return nil end\n"
+      "  local buff_store = {\n"
+      "    ['异种真气'] = { Name = '异种真气', Level = 2, LeftRound = 2 },\n"
+      "    ['拆招'] = { Name = '拆招', Level = 1, LeftRound = 2 },\n"
+      "    ['离线Buff'] = { Name = '离线Buff', Level = 1, LeftRound = 2 }\n"
+      "  }\n"
+      "  local buff_list = { Count = 1, [0] = buff_store['离线Buff'] }\n"
+      "  function buff_list:Remove(v)\n"
+      "    self[0] = nil\n"
+      "    self.Count = 0\n"
+      "  end\n"
+      "  local sprite = {\n"
+      "    ParentBattleField = bf,\n"
+      "    Role = role,\n"
+      "    role = role,\n"
+      "    Name = role.Name,\n"
+      "    Team = 1,\n"
+      "    X = 1,\n"
+      "    Y = 1,\n"
+      "    Hp = 100,\n"
+      "    MaxHp = 100,\n"
+      "    Mp = 20,\n"
+      "    MaxMp = 100,\n"
+      "    Sp = 10,\n"
+      "    Balls = 0,\n"
+      "    ItemCd = 0,\n"
+      "    buffs = { Clear = function() end },\n"
+      "    Buffs = buff_list\n"
+      "  }\n"
+      "  role.Sprite = sprite\n"
+      "  function sprite:GetVariable() return 0 end\n"
+      "  function sprite:SetVariable() end\n"
+      "  function sprite:GetBuff(name) return buff_store[name] end\n"
+      "  function sprite:HasBuff(name) return buff_store[name] ~= nil and name ~= '紫气' end\n"
+      "  function sprite:DeleteBuff(name) buff_store[name] = nil end\n"
+      "  function sprite:AddBuff(name, level, round)\n"
+      "    buff_store[name] = { Name = name, Level = level or 1, LeftRound = round or 1 }\n"
+      "  end\n"
+      "  function sprite:AddBuffOnly2(name, level, round)\n"
+      "    buff_store[name] = { Name = name, Level = level or 1, LeftRound = round or 1 }\n"
+      "  end\n"
+      "  function sprite:Set_needRefresh()\n"
+      "    assert(self == sprite, 'sprite.Set_needRefresh self=' .. tostring(self))\n"
+      "  end\n"
+      "  function sprite:AttackInfo() end\n"
+      "  function sprite:RandomSay() end\n"
+      "  function sprite:SkillCdRecover() end\n"
+      "  function sprite:GetEquippedSkill() return { Level = 1 } end\n"
+      "  setmetatable(sprite, {\n"
+      "    __index = function(_, k)\n"
+      "      return function(self)\n"
+      "        assert(self == sprite, 'sprite.' .. tostring(k) .. ' self=' .. tostring(self))\n"
+      "        return nil\n"
+      "      end\n"
+      "    end\n"
+      "  })\n"
+      "  bf.SpritesTable = { sprite }\n"
+      "  local prevRole = {\n"
+      "    role = { Name = '天山童姥', Skills = { Count = 0 } },\n"
+      "    attributes = { att_skillcd = 3 },\n"
+      "    talents = {},\n"
+      "    roleTalents = {},\n"
+      "    skillSpecials = {},\n"
+      "    workflows = { BeforeRoleAction = {} },\n"
+      "    persistData = { preTime = 1 },\n"
+      "    AddHp = 0,\n"
+      "    AddMp = 1,\n"
+      "    female = 0,\n"
+      "    InternalSkillName = '逝水神诀'\n"
+      "  }\n"
+      "  return bf, sprite, prevRole\n"
+      "end\n"
+      "for talent, candidate in pairs(wf.callbacks) do\n"
+      "  if type(candidate) == 'function' then\n"
+      "    local info = debug.getinfo(candidate, 'S') or {}\n"
+      "    local bf, sprite, prevRole = make_case()\n"
+      "    local ok, err = xpcall(function() return candidate(bf, sprite, prevRole) end, debug.traceback)\n"
+      "    if not ok and (string.find(tostring(err), 'bf.Log self=', 1, true) ~= nil or string.find(tostring(err), 'bf.Log msg=', 1, true) ~= nil) then\n"
+      "      error('__BRA_LOG_BAD__ talent=' .. tostring(talent) .. ' line=' .. tostring(info.linedefined or -1) .. ' err=' .. tostring(err), 0)\n"
+      "    end\n"
+      "  end\n"
+      "end\n";
+
+  return dostring(L, harness, "@bcrun_battle_beforeroleaction_logprobe");
+}
+
 static int run_attacklogic_tempvalue_harness(lua_State *L)
 {
   const char *harness =
@@ -923,6 +1137,77 @@ static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
       "assert(type(prevRoleAtk.MulDmg) == 'number', 'extendtalents_mul=' .. type(prevRoleAtk.MulDmg))\n";
 
   return dostring(L, harness, "@bcrun_attacklogic_tempvalue_chain");
+}
+
+static int run_attacklogic_extendtalents_bilianglog_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "local bf = { BattleTimestamp = 1, SpritesTable = {} }\n"
+      "function bf:Log(msg)\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "  if string.find(msg, '擘两分星', 1, true) ~= nil then error('__BILIANG_LOG_OK__', 0) end\n"
+      "end\n"
+      "local sourceRole = { Name = 'atk-role', Level = 10, level = 10 }\n"
+      "local targetRole = { Name = 'def-role', Level = 10, level = 10 }\n"
+      "local sourceSprite = { ParentBattleField = bf, Role = sourceRole, Team = 1, Name = sourceRole.Name, X = 1, Y = 1, Hp = 100, MaxHp = 100, Mp = 50, MaxMp = 50, Balls = 0, Sp = 0 }\n"
+      "local buffs = {}\n"
+      "local targetSprite = { ParentBattleField = bf, Role = targetRole, Team = 2, Name = targetRole.Name, X = 2, Y = 2, Hp = 100, MaxHp = 100, Mp = 50, MaxMp = 50, Balls = 0, Sp = 0 }\n"
+      "function targetSprite:HasBuff(name)\n"
+      "  assert(self == targetSprite, 'HasBuff self=' .. tostring(self))\n"
+      "  return buffs[name] ~= nil\n"
+      "end\n"
+      "function targetSprite:GetBuff(name)\n"
+      "  assert(self == targetSprite, 'GetBuff self=' .. tostring(self))\n"
+      "  return buffs[name]\n"
+      "end\n"
+      "function targetSprite:AddBuffOnly2(name, level, round)\n"
+      "  assert(self == targetSprite, 'AddBuffOnly2 self=' .. tostring(self))\n"
+      "  buffs[name] = { Name = name, Level = level or 0, LeftRound = round or 0, Property = 0 }\n"
+      "end\n"
+      "function targetSprite:Set_needRefresh()\n"
+      "  assert(self == targetSprite, 'Set_needRefresh self=' .. tostring(self))\n"
+      "end\n"
+      "bf.SpritesTable = { sourceSprite, targetSprite }\n"
+      "local skill = { attackResult_Hp = 100 }\n"
+      "local prevRoleAtk = { MulDmg = 1 }\n"
+      "local prevRoleDef = {}\n"
+      "local wf = BattleUtil.GetWorkflowForTalent('extendTalents1_forDefencerReal')\n"
+      "assert(type(wf) == 'table', 'wf=' .. type(wf))\n"
+      "assert(type(wf.callbacks) == 'table', 'callbacks=' .. type(wf.callbacks))\n"
+      "local keys = {}\n"
+      "for k in pairs(wf.callbacks) do keys[#keys + 1] = tostring(k) end\n"
+      "table.sort(keys)\n"
+      "local callback = wf.callbacks['擘两分星']\n"
+      "assert(type(callback) == 'function', 'callback=' .. type(callback) .. ' keys=' .. table.concat(keys, ','))\n"
+      "local ok, err = pcall(callback, sourceSprite, targetSprite, skill, bf, {}, prevRoleAtk, prevRoleDef)\n"
+      "assert(ok == false, 'AttackLogic_extendTalents returned unexpectedly')\n"
+      "assert(string.find(tostring(err), '__BILIANG_LOG_OK__', 1, true) ~= nil, 'extendtalents_biliang err=' .. tostring(err))\n";
+
+  return dostring(L, harness, "@bcrun_attacklogic_extendtalents_bilianglog");
+}
+
+static int run_attacklogic_extendtalents3_registryprobe_harness(lua_State *L)
+{
+  const char *harness =
+      "local function dump_flow(flow_name)\n"
+      "  local wf = BattleUtil.GetWorkflowForTalent(flow_name)\n"
+      "  assert(type(wf) == 'table', flow_name .. '=' .. type(wf))\n"
+      "  assert(type(wf.callbacks) == 'table', flow_name .. '.callbacks=' .. type(wf.callbacks))\n"
+      "  local rows = {}\n"
+      "  for talent, cb in pairs(wf.callbacks) do\n"
+      "    local info = debug.getinfo(cb, 'S') or {}\n"
+      "    rows[#rows + 1] = tostring(talent) .. ':' .. tostring(info.linedefined)\n"
+      "  end\n"
+      "  table.sort(rows)\n"
+      "  print(flow_name .. '=' .. table.concat(rows, '|'))\n"
+      "end\n"
+      "dump_flow('extendTalents3_forAttacker')\n"
+      "dump_flow('extendTalents3_forDefencer')\n";
+
+  return dostring(L, harness, "@bcrun_attacklogic_extendtalents3_registryprobe");
 }
 
 static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode);
@@ -1947,7 +2232,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -1985,12 +2270,17 @@ int main(int argc, char **argv)
        strcmp(mode, "registerprevrole") == 0 ||
        strcmp(mode, "checktrigger") == 0 ||
        strcmp(mode, "buff_onroundbuff_maxcall") == 0 ||
+       strcmp(mode, "buff_onroundbuff_recoverymin") == 0 ||
        strcmp(mode, "installyinjian") == 0 ||
        strcmp(mode, "battle_rest") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
        strcmp(mode, "battle_beforeroleaction_mincall") == 0 ||
+       strcmp(mode, "battle_beforeroleaction_logprobe") == 0 ||
+       strcmp(mode, "battle_minusskillcd_skilllog") == 0 ||
        strcmp(mode, "attacklogic_tempvalue") == 0 ||
        strcmp(mode, "attacklogic_tempvalue_chain") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents_bilianglog") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents3_registryprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_misslog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_chaizhaolog") == 0 ||
@@ -2003,6 +2293,8 @@ int main(int argc, char **argv)
       status = run_registerprevrole_trigger_harness(L);
     } else if (strcmp(mode, "buff_onroundbuff_maxcall") == 0) {
       status = run_buff_onroundbuff_maxcall_harness(L);
+    } else if (strcmp(mode, "buff_onroundbuff_recoverymin") == 0) {
+      status = run_buff_onroundbuff_recoverymin_harness(L);
     } else if (strcmp(mode, "installyinjian") == 0) {
       status = run_installyinjian_harness(L);
     } else if (strcmp(mode, "battle_rest") == 0) {
@@ -2011,8 +2303,16 @@ int main(int argc, char **argv)
       status = run_battle_beforeskillanimation_callback_harness(L);
     } else if (strcmp(mode, "battle_beforeroleaction_mincall") == 0) {
       status = run_battle_beforeroleaction_mincall_harness(L);
+    } else if (strcmp(mode, "battle_beforeroleaction_logprobe") == 0) {
+      status = run_battle_beforeroleaction_logprobe_harness(L);
+    } else if (strcmp(mode, "battle_minusskillcd_skilllog") == 0) {
+      status = run_battle_minusskillcd_skilllog_harness(L);
     } else if (strcmp(mode, "attacklogic_tempvalue_chain") == 0) {
       status = run_attacklogic_tempvalue_chain_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents_bilianglog") == 0) {
+      status = run_attacklogic_extendtalents_bilianglog_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents3_registryprobe") == 0) {
+      status = run_attacklogic_extendtalents3_registryprobe_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0) {
       status = run_attacklogic_extendtalents2_gedanglog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_misslog") == 0) {

@@ -1473,14 +1473,32 @@ function Test-AttackLogicExtendTalents2CallbackCallWindow([string]$repoRootWsl, 
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=0\s+C=5\s+D=5.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=19\s+B=0\s+C=9\s+D=9.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=11\s+B=1\s+C=8\s+D=264'
-    $badCount = [regex]::Matches($disText, $badPattern).Count
-    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+    $badPattern2 = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=19\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=9\s+D=9.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=1\s+C=8\s+D=264'
+    $goodPattern2 = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=19\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=9\s+D=9.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=1\s+C=8\s+D=264'
+    $badCount = [regex]::Matches($disText, $badPattern).Count + [regex]::Matches($disText, $badPattern2).Count
+    $goodCount = [regex]::Matches($disText, $goodPattern).Count + [regex]::Matches($disText, $goodPattern2).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badCount -ne 0) {
         $fails.Add("residual bad proto320 extendtalents2 callback call window")
     }
-    if ($goodCount -eq 0) {
+    if ($goodCount -lt 2) {
         $fails.Add("missing corrected proto320 extendtalents2 callback call window")
     }
 
@@ -1798,6 +1816,19 @@ function Test-AttackLogicExtendTalents2FullProbeHarness([string]$repoRootWsl, [s
     $runCmd = @(
         "cd '$repoRootWsl'",
         "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_fullprobe > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-AttackLogicExtendTalents2XixingCallbackHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_xixingcallback > '$logWsl' 2>&1"
     ) -join " && "
     $code = Invoke-WslBash $runCmd
     return [pscustomobject]@{
@@ -2232,6 +2263,9 @@ if (Test-Path $attacklogicPath) {
     # The misslog harness stays in gating because it reuses the same
     # single-file stub as fullprobe, but forces result.Hp==0 and proves the
     # early line6346 branch that fullprobe does not pin.
+    # The xixing callback harness stays diagnostic-only for now: the single-file
+    # loader still aborts early at tmp.lua:26986 before that workflow is
+    # registered, so it can prove stub coverage gaps but not runtime regressions.
     # The dedicated yihua harness still stays out of gating because loading
     # AttackLogic alone aborts at tmp.lua:26986 before the later workflow
     # registrations are complete, so the runtime callback for line 6735 is

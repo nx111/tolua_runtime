@@ -15,6 +15,7 @@ LOCAL_CPPFLAGS := -O2
 LOCAL_CFLAGS :=  -O2 -std=gnu99
 LOCAL_LDLIBS := -llog
 LOCAL_SRC_FILES :=	../../tolua.c \
+					../../tolua_fr1_to_fr2.c \
 					../../int64.c \
 					../../uint64.c \
 					../../pb.c \

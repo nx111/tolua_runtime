@@ -20,7 +20,7 @@ cd luajit-2.1/src
 make clean
 make -j$(nproc --ignore 3) HOST_CC="gcc -m64" CROSS=$NDKP STATIC_CC=$CC DYNAMIC_CC="$CC -fPIC" TARGET_LD=$CC TARGET_SYS=Linux TARGET_FLAGS="$TARGET_FLAGS" XCFLAGS="-DLUAJIT_ENABLE_GC64"
 cp ./libluajit.a ../../android/jni/libluajit.a
-make clean
+# make clean
 
 cd ../../android
 ARM64_LDFLAGS="-Wl,-z,max-page-size=16384"
@@ -28,4 +28,4 @@ $NDK/ndk-build clean APP_ABI="arm64-v8a" APP_LDFLAGS="$ARM64_LDFLAGS"
 $NDK/ndk-build APP_ABI="arm64-v8a" APP_LDFLAGS="$ARM64_LDFLAGS"
 mkdir -p ../Plugins/Android/libs/arm64-v8a
 cp libs/arm64-v8a/libtolua.so ../Plugins/Android/libs/arm64-v8a
-$NDK/ndk-build clean APP_ABI="arm64-v8a" APP_LDFLAGS="$ARM64_LDFLAGS"
+#$NDK/ndk-build clean APP_ABI="arm64-v8a" APP_LDFLAGS="$ARM64_LDFLAGS"

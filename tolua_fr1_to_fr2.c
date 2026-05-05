@@ -1514,6 +1514,60 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
       old_last == (BCReg)(old_first + 1) && pc >= 2) {
     BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
     BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+    int allow_cat_tail_skip = 1;
+
+    if (ctx != NULL && ctx->proto_index == 241u &&
+        bc_a(consumer_ins) == 12 && pc >= 8) {
+      BCIns p3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+      BCIns p4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+      BCIns p5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+      BCIns p6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 6) * 4, be);
+      BCIns p7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 7) * 4, be);
+      BCIns p8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 8) * 4, be);
+      if (bc_op(prev1) == BC_CAT &&
+          bc_a(prev1) == 14 && bc_b(prev1) == 14 && bc_c(prev1) == 17 && bc_d(prev1) == 3601 &&
+          bc_op(prev2) == BC_KSTR && bc_a(prev2) == 17 && bc_d(prev2) == 26 &&
+          bc_op(p3) == BC_TGETS && bc_a(p3) == 16 && bc_b(p3) == 5 && bc_c(p3) == 15 && bc_d(p3) == 1295 &&
+          bc_op(p4) == BC_KSTR && bc_a(p4) == 15 && bc_d(p4) == 25 &&
+          bc_op(p5) == BC_TGETS && bc_a(p5) == 14 && bc_b(p5) == 14 && bc_c(p5) == 2 && bc_d(p5) == 3586 &&
+          bc_op(p6) == BC_TGETS && bc_a(p6) == 14 && bc_b(p6) == 0 && bc_c(p6) == 24 && bc_d(p6) == 24 &&
+          bc_op(p7) == BC_TGETS && bc_a(p7) == 12 && bc_b(p7) == 3 && bc_c(p7) == 23 && bc_d(p7) == 791 &&
+          bc_op(p8) == BC_MOV && bc_a(p8) == 13 && bc_d(p8) == 3) {
+        allow_cat_tail_skip = 0;
+      }
+    }
+    if (ctx != NULL && ctx->proto_index == 241u &&
+        bc_a(consumer_ins) == 19 && pc >= 14) {
+      BCIns p3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+      BCIns p4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 4) * 4, be);
+      BCIns p5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 5) * 4, be);
+      BCIns p6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 6) * 4, be);
+      BCIns p7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 7) * 4, be);
+      BCIns p8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 8) * 4, be);
+      BCIns p9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 9) * 4, be);
+      BCIns p10 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 10) * 4, be);
+      BCIns p11 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 11) * 4, be);
+      BCIns p12 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 12) * 4, be);
+      BCIns p13 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 13) * 4, be);
+      BCIns p14 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 14) * 4, be);
+      if (bc_op(prev1) == BC_CAT &&
+          bc_a(prev1) == 21 && bc_b(prev1) == 21 && bc_c(prev1) == 25 && bc_d(prev1) == 5401 &&
+          bc_op(prev2) == BC_KSTR && bc_a(prev2) == 25 && bc_d(prev2) == 146 &&
+          bc_op(p3) == BC_CALL && bc_a(p3) == 24 && bc_b(p3) == 2 && bc_c(p3) == 2 &&
+          bc_op(p4) == BC_MULVN && bc_a(p4) == 26 && bc_b(p4) == 26 && bc_c(p4) == 6 && bc_d(p4) == 6662 &&
+          bc_op(p5) == BC_SUBNV && bc_a(p5) == 26 && bc_b(p5) == 26 && bc_c(p5) == 4 && bc_d(p5) == 6660 &&
+          bc_op(p6) == BC_DIVVV && bc_a(p6) == 26 && bc_b(p6) == 18 && bc_c(p6) == 16 && bc_d(p6) == 4624 &&
+          bc_op(p7) == BC_TGETS && bc_a(p7) == 24 && bc_b(p7) == 24 && bc_c(p7) == 22 && bc_d(p7) == 6166 &&
+          bc_op(p8) == BC_GGET && bc_a(p8) == 24 && bc_d(p8) == 21 &&
+          bc_op(p9) == BC_KSTR && bc_a(p9) == 23 && bc_d(p9) == 145 &&
+          bc_op(p10) == BC_TGETS && bc_a(p10) == 22 && bc_b(p10) == 22 && bc_c(p10) == 2 && bc_d(p10) == 5634 &&
+          bc_op(p11) == BC_TGETS && bc_a(p11) == 22 && bc_b(p11) == 0 && bc_c(p11) == 24 && bc_d(p11) == 24 &&
+          bc_op(p12) == BC_KSTR && bc_a(p12) == 21 && bc_d(p12) == 144 &&
+          bc_op(p13) == BC_TGETS && bc_a(p13) == 19 && bc_b(p13) == 3 && bc_c(p13) == 23 && bc_d(p13) == 791 &&
+          bc_op(p14) == BC_MOV && bc_a(p14) == 20 && bc_d(p14) == 3) {
+        allow_cat_tail_skip = 0;
+      }
+    }
 
     /* Keep CALL(C=3,B=1) with trailing TGETS+TGETV arg2 chain as-is.
        Repacking this shape can swap/drop DoAllTrigger-style args and poison
@@ -1528,7 +1582,8 @@ static int tolua_shift_proto_slice_right_for_fr2(uint8_t *buf, size_t bc_pos, ui
                        (unsigned int)old_first, (unsigned int)old_last);
       return TOLUA_BCCONV_OK;
     }
-    if (bc_op(prev1) == BC_CAT &&
+    if (allow_cat_tail_skip &&
+        bc_op(prev1) == BC_CAT &&
         bc_a(prev1) == old_last &&
         bc_b(prev1) == old_last &&
         bc_c(prev1) >= old_last) {

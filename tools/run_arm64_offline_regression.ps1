@@ -430,9 +430,10 @@ function Test-AttackLogicExtend3ArgShift([string]$repoRootWsl, [string]$bytecode
 
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($line in (Get-Content $disPath)) {
-        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=(?<line>\d+))?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
             $rows.Add([pscustomobject]@{
                 pc = [int]$matches['pc']
+                line = if ($matches['line']) { [int]$matches['line'] } else { -1 }
                 op = $matches['op']
                 a = [int]$matches['a']
                 b = [int]$matches['b']
@@ -647,9 +648,10 @@ function Test-AttackLogicRoleValuesArgShift([string]$repoRootWsl, [string]$bytec
 
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($line in (Get-Content $disPath)) {
-        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=(?<line>\d+))?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
             $rows.Add([pscustomobject]@{
                 pc = [int]$matches['pc']
+                line = if ($matches['line']) { [int]$matches['line'] } else { -1 }
                 op = $matches['op']
                 a = [int]$matches['a']
                 b = [int]$matches['b']
@@ -760,9 +762,10 @@ function Test-AttackLogicRoleValuesLogShift([string]$repoRootWsl, [string]$bytec
 
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($line in (Get-Content $disPath)) {
-        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=(?<line>\d+))?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
             $rows.Add([pscustomobject]@{
                 pc = [int]$matches['pc']
+                line = if ($matches['line']) { [int]$matches['line'] } else { -1 }
                 op = $matches['op']
                 a = [int]$matches['a']
                 b = [int]$matches['b']
@@ -853,6 +856,101 @@ function Test-AttackLogicRoleValuesLogShift([string]$repoRootWsl, [string]$bytec
     }
     if ($goodPcs.Count -eq 0) {
         $fails.Add("missing corrected rolevalues bf.Log window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicRoleValuesDefCallbackCallWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 365 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto365 failed exit=$code")
+        }
+    }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=(?<line>\d+))?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $rows.Add([pscustomobject]@{
+                pc = [int]$matches['pc']
+                line = if ($matches['line']) { [int]$matches['line'] } else { -1 }
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            })
+        }
+    }
+
+    $badPcs = New-Object System.Collections.Generic.List[int]
+    $goodPcs = New-Object System.Collections.Generic.List[int]
+    $weirdPcs = New-Object System.Collections.Generic.List[string]
+    for ($idx = 7; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+        $i4 = $rows[$idx - 4]
+        $i5 = $rows[$idx - 5]
+        $i6 = $rows[$idx - 6]
+        $i7 = $rows[$idx - 7]
+
+        if ($c.op -ne 'CALL' -or $c.a -ne 16 -or $c.b -ne 1 -or $c.c -ne 7 -or $c.line -ne 7608) {
+            continue
+        }
+        if (-not ($i7.op -eq 'MOV' -and $i7.a -eq 16 -and $i7.d -eq 15)) {
+            continue
+        }
+
+        $badMatch = (
+            $i6.op -eq 'MOV' -and $i6.a -eq 17 -and $i6.d -eq 5 -and
+            $i5.op -eq 'MOV' -and $i5.a -eq 18 -and $i5.d -eq 6 -and
+            $i4.op -eq 'MOV' -and $i4.a -eq 19 -and $i4.d -eq 2 -and
+            $i3.op -eq 'MOV' -and $i3.a -eq 20 -and $i3.d -eq 7 -and
+            $i2.op -eq 'MOV' -and $i2.a -eq 21 -and $i2.d -eq 3 -and
+            $i1.op -eq 'MOV' -and $i1.a -eq 22 -and $i1.d -eq 4
+        )
+        if ($badMatch) {
+            $badPcs.Add($c.pc)
+            continue
+        }
+
+        $goodMatch = (
+            $i6.op -eq 'MOV' -and $i6.a -eq 18 -and $i6.d -eq 5 -and
+            $i5.op -eq 'MOV' -and $i5.a -eq 19 -and $i5.d -eq 6 -and
+            $i4.op -eq 'MOV' -and $i4.a -eq 20 -and $i4.d -eq 2 -and
+            $i3.op -eq 'MOV' -and $i3.a -eq 21 -and $i3.d -eq 7 -and
+            $i2.op -eq 'MOV' -and $i2.a -eq 22 -and $i2.d -eq 3 -and
+            $i1.op -eq 'MOV' -and $i1.a -eq 23 -and $i1.d -eq 4
+        )
+        if ($goodMatch) {
+            $goodPcs.Add($c.pc)
+            continue
+        }
+
+        $weirdPcs.Add("pc=$($c.pc) got=A$($i6.a),A$($i5.a),A$($i4.a),A$($i3.a),A$($i2.a),A$($i1.a)")
+    }
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badPcs.Count -ne 0) {
+        $fails.Add("residual bad rolevalues def callback window at CALL pc=" + ($badPcs -join ','))
+    }
+    if ($goodPcs.Count -eq 0) {
+        $fails.Add("missing corrected rolevalues def callback window")
+    }
+    if ($weirdPcs.Count -ne 0) {
+        $fails.Add("unexpected rolevalues def callback windows: " + ($weirdPcs -join ';'))
     }
 
     return [pscustomobject]@{
@@ -1824,11 +1922,19 @@ if (Test-Path $attacklogicPath) {
 
     $roleValuesShapeDis = Join-Path $outAbs "attacklogic.proto389.rolevalues.dis.txt"
     $roleValuesShapeCheck = Test-AttackLogicRoleValuesArgShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $roleValuesShapeDis
-    $roleValuesShapeFailures = @($roleValuesShapeCheck.failures).Count
+    $roleValuesDefCallbackDis = Join-Path $outAbs "attacklogic.proto365.rolevalues_defcallback.dis.txt"
+    $roleValuesDefCallbackCheck = Test-AttackLogicRoleValuesDefCallbackCallWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $roleValuesDefCallbackDis
+    $roleValuesShapeFailures = @($roleValuesShapeCheck.failures).Count + @($roleValuesDefCallbackCheck.failures).Count
     if (-not $roleValuesShapeCheck.ok) {
         $failed = $true
         foreach ($msg in $roleValuesShapeCheck.failures) {
             Write-Warning "[attacklogic rolevalues shape] $msg"
+        }
+    }
+    if (-not $roleValuesDefCallbackCheck.ok) {
+        $failed = $true
+        foreach ($msg in $roleValuesDefCallbackCheck.failures) {
+            Write-Warning "[attacklogic rolevalues def callback shape] $msg"
         }
     }
 
@@ -1949,10 +2055,19 @@ if (Test-Path $attacklogicPath) {
         Write-Warning "[attacklogic extendtalents2 fullprobe] harness failed exit=$($extendTalents2FullProbeCheck.exit_code): $extendTalents2FullProbeLog"
     }
 
-    # The battle+AttackLogic combo harness stays out of gating; the stub still
-    # drifts on optional list/title fields and is not the right proof point for
-    # the proto364 CALL(C=10) issue. That path is guarded here by the dedicated
-    # proto364 static window check instead.
+    if ($battleOutPath -and (Test-Path $battleOutPath)) {
+        $chainHarnessLog = Join-Path $outAbs "attacklogic.tempvalue_chain.log"
+        $chainHarnessCheck = Test-AttackLogicTempValueChainHarness -repoRootWsl $repoRootWsl -battleBytecodeWsl (Convert-ToWslPath $battleOutPath) -attacklogicBytecodeWsl $outWsl -logPath $chainHarnessLog
+        $chainHarnessFailures = if ($chainHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $chainHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[attacklogic tempvalue chain] harness failed exit=$($chainHarnessCheck.exit_code): $chainHarnessLog"
+        }
+    }
+
+    # The combo harness is back in gating only because it now drives the
+    # RoleValuesDef callback path that single-file probes missed; static proto365
+    # window checks remain the primary proof point for the exact call shape.
     # The misslog harness stays in gating because it reuses the same
     # single-file stub as fullprobe, but forces result.Hp==0 and proves the
     # early line6346 branch that fullprobe does not pin.

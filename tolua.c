@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260504-proto108-storyaction-callbackc3";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto365-rolevalues-defcallback-c7";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -6272,6 +6272,58 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto365 bf.Log method self fix A16..A21 -> A17..A22");
+    }
+  }
+
+  /* proto365 RoleValuesDef callback window observed after conversion:
+       MOV A16 <- A15; MOV A17 <- A5; MOV A18 <- A6; MOV A19 <- A2;
+       MOV A20 <- A7; MOV A21 <- A3; MOV A22 <- A4; CALL A16 B1 C7
+     Native GC64/FR2 leaves A17 as the post-function hole for this 6-arg
+     callback, so this exact window must move to A18..A23. */
+  if (ctx != NULL && ctx->proto_index == 365u) {
+    uint32_t p = 0;
+    for (p = 7; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7);
+
+      if (cop != BC_CALL || bc_a(c) != 16 || bc_b(c) != 1 || bc_c(c) != 7) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 22 || bc_d(i1) != 4) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 21 || bc_d(i2) != 3) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 20 || bc_d(i3) != 7) continue;
+      if (o4 != BC_MOV || bc_a(i4) != 19 || bc_d(i4) != 2) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 18 || bc_d(i5) != 6) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 17 || bc_d(i6) != 5) continue;
+      if (o7 != BC_MOV || bc_a(i7) != 16 || bc_d(i7) != 15) continue;
+
+      setbc_a(&i6, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_a(&i5, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i4, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 21);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 23);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 23, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto365 rolevalues def callback C7 fix A17..A22 -> A18..A23");
     }
   }
 

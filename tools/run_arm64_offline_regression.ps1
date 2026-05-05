@@ -336,6 +336,78 @@ function Test-BattleBeforeSkillAnimationCallbackHarness([string]$repoRootWsl, [s
     }
 }
 
+function Test-BattleBeforeRoleActionMinCallShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 297 305 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto132 297..305 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 297; op = "GGET";   a = 6; b = 0;   c = 66; d = 66;   tag = "pc297" },
+        @{ pc = 298; op = "TGETS";  a = 6; b = 6;   c = 67; d = 1603; tag = "pc298" },
+        @{ pc = 299; op = "SUBNV";  a = 8; b = 5;   c = 3;  d = 1283; tag = "pc299" },
+        @{ pc = 300; op = "TGETS";  a = 9; b = 4;   c = 68; d = 1092; tag = "pc300" },
+        @{ pc = 301; op = "TGETS";  a = 9; b = 9;   c = 69; d = 2373; tag = "pc301" },
+        @{ pc = 302; op = "IST";    a = 0; b = 0;   c = 9;  d = 9;    tag = "pc302" },
+        @{ pc = 303; op = "JMP";    a = 9; b = 128; c = 1;  d = 32769; tag = "pc303" },
+        @{ pc = 304; op = "KSHORT"; a = 9; b = 0;   c = 0;  d = 0;    tag = "pc304" },
+        @{ pc = 305; op = "CALL";   a = 6; b = 2;   c = 3;  d = 515;  tag = "pc305" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BattleBeforeRoleActionMinCallHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_beforeroleaction_mincall > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicTempValueArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -1761,6 +1833,7 @@ foreach ($name in $targets) {
     $doAllTriggerFailures = 0
     $registerPrevRoleFailures = 0
     $restHarnessFailures = 0
+    $beforeRoleActionFailures = 0
     $beforeSkillAnimationFailures = 0
 
     if ($name -eq "battle.lua") {
@@ -1802,6 +1875,26 @@ foreach ($name in $targets) {
             Write-Warning "[battle rest] harness failed exit=$($restHarnessCheck.exit_code): $restHarnessLog"
         }
 
+        $beforeRoleActionDis = Join-Path $outAbs "battle.proto132.beforeroleaction_mincall.dis.txt"
+        $beforeRoleActionShapeCheck = Test-BattleBeforeRoleActionMinCallShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionDis
+        $beforeRoleActionShapeFailures = @($beforeRoleActionShapeCheck.failures).Count
+        if (-not $beforeRoleActionShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $beforeRoleActionShapeCheck.failures) {
+                Write-Warning "[battle beforeroleaction shape] $msg"
+            }
+        }
+
+        $beforeRoleActionLog = Join-Path $outAbs "battle.beforeroleaction_mincall.log"
+        $beforeRoleActionHarnessCheck = Test-BattleBeforeRoleActionMinCallHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $beforeRoleActionLog
+        $beforeRoleActionHarnessFailures = if ($beforeRoleActionHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $beforeRoleActionHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle beforeroleaction harness] failed exit=$($beforeRoleActionHarnessCheck.exit_code): $beforeRoleActionLog"
+        }
+
+        $beforeRoleActionFailures = $beforeRoleActionShapeFailures + $beforeRoleActionHarnessFailures
+
         $beforeSkillAnimationDis = Join-Path $outAbs "battle.proto177.beforeskillanimation.dis.txt"
         $beforeSkillAnimationShapeCheck = Test-BattleBeforeSkillAnimationCallbackShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationDis
         $beforeSkillAnimationShapeFailures = @($beforeSkillAnimationShapeCheck.failures).Count
@@ -1841,6 +1934,7 @@ foreach ($name in $targets) {
         doalltrigger_fail   = $doAllTriggerFailures
         registerprevrole_fail = $registerPrevRoleFailures
         rest_fail           = $restHarnessFailures
+        beforeroleaction_fail = $beforeRoleActionFailures
         beforeskillanimation_fail = $beforeSkillAnimationFailures
         log_path            = $logPath
         out_path            = $outPath
@@ -2094,6 +2188,7 @@ if (Test-Path $attacklogicPath) {
         doalltrigger_fail     = 0
         registerprevrole_fail = 0
         rest_fail             = 0
+        beforeroleaction_fail = 0
         tempvalue_shape_fail  = $shapeFailures
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
@@ -2166,6 +2261,9 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'rest_fail' -and $row.rest_fail -ne 0) {
+                $failed = $true
+            }
+            if ($row.PSObject.Properties.Name -contains 'beforeroleaction_fail' -and $row.beforeroleaction_fail -ne 0) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'beforeskillanimation_fail' -and $row.beforeskillanimation_fail -ne 0) {

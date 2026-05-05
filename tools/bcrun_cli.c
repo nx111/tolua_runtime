@@ -498,6 +498,109 @@ static int run_battle_beforeskillanimation_callback_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_battle_beforeskillanimation_callback");
 }
 
+static int run_battle_beforeroleaction_mincall_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "RuntimeData.Instance.isAttackAnalog = false\n"
+      "BattleUtil.AutoCount = nil\n"
+      "BattleUtil.CheckIfSkillUpgraded = function() return false end\n"
+      "BattleUtil.SetHejiSkill = function() end\n"
+      "BattleUtil.NormalAddBuff = function() end\n"
+      "local role = {\n"
+      "  Name = 'offline-role',\n"
+      "  Level = 30,\n"
+      "  Hp = 100,\n"
+      "  Mp = 50,\n"
+      "  MaxHp = 100,\n"
+      "  MaxMp = 50,\n"
+      "  InternalSkills = { Count = 0 },\n"
+      "  Skills = { Count = 0 },\n"
+      "  EquippedInternalSkill = { Level = 30, UniqueSkills = { Count = 0 } },\n"
+      "  EquippedEquipments = {},\n"
+      "  Attributes = { female = 0 }\n"
+      "}\n"
+      "setmetatable(role, { __index = function() return 0 end })\n"
+      "function role:HasTalent() return false end\n"
+      "function role:RemoveTalent() end\n"
+      "function role:AddTalent() end\n"
+      "local bf = { SpritesTable = {}, BattleTimestamp = 10 }\n"
+      "function bf:Log(msg)\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "end\n"
+      "local buffs = { Count = 0 }\n"
+      "function buffs:Clear() self.Count = 0 end\n"
+      "local sprite = {\n"
+      "  ParentBattleField = bf,\n"
+      "  Role = role,\n"
+      "  role = role,\n"
+      "  Name = role.Name,\n"
+      "  Team = 3,\n"
+      "  X = 1,\n"
+      "  Y = 1,\n"
+      "  Hp = 100,\n"
+      "  MaxHp = 100,\n"
+      "  Mp = 50,\n"
+      "  MaxMp = 50,\n"
+      "  Sp = 10,\n"
+      "  Balls = 0,\n"
+      "  ItemCd = 0,\n"
+      "  buffs = buffs\n"
+      "}\n"
+      "setmetatable(sprite, {\n"
+      "  __index = function(_, k)\n"
+      "    return function(self)\n"
+      "      assert(self == sprite, 'sprite.' .. tostring(k) .. ' self=' .. tostring(self))\n"
+      "      return nil\n"
+      "    end\n"
+      "  end\n"
+      "})\n"
+      "function sprite:HasBuff() return false end\n"
+      "function sprite:GetBuff() return nil end\n"
+      "function sprite:AddBuff() end\n"
+      "function sprite:AddBuffOnly2() end\n"
+      "function sprite:DeleteBuff() end\n"
+      "function sprite:Set_needRefresh() end\n"
+      "function sprite:AttackInfo() end\n"
+      "function sprite:RandomSay() end\n"
+      "function sprite:HasTalent() return false end\n"
+      "function sprite:GetEquippedSkill() return { Level = 1 } end\n"
+      "bf.SpritesTable = { sprite }\n"
+      "local prevRole = {\n"
+      "  role = role,\n"
+      "  attributes = { att_skillcd = 5 },\n"
+      "  talents = {},\n"
+      "  roleTalents = {},\n"
+      "  skillSpecials = {},\n"
+      "  workflows = { BeforeRoleAction = { function() error('__BRA_MIN_OK__', 0) end } },\n"
+      "  persistData = { preTime = 1 },\n"
+      "  AddHp = 0,\n"
+      "  AddMp = 0\n"
+      "}\n"
+      "BattleUtil.PrevRoles = BattleUtil.PrevRoles or {}\n"
+      "BattleUtil.PrevRoles[sprite] = prevRole\n"
+      "BattleUtil.GetRrevRole = function(s)\n"
+      "  assert(s == sprite, 'GetRrevRole arg=' .. tostring(s))\n"
+      "  return prevRole\n"
+      "end\n"
+      "local raw_min = math.min\n"
+      "math.min = function(a, b, ...)\n"
+      "  if type(a) ~= 'number' or type(b) ~= 'number' then\n"
+      "    error('__BRA_MIN_BAD__ a=' .. type(a) .. ':' .. tostring(a) .. ' b=' .. type(b) .. ':' .. tostring(b), 0)\n"
+      "  end\n"
+      "  return raw_min(a, b, ...)\n"
+      "end\n"
+      "local ok, err = pcall(BATTLE_BeforeRoleAction, bf, sprite)\n"
+      "assert(ok == false, 'BATTLE_BeforeRoleAction returned unexpectedly')\n"
+      "assert(string.find(tostring(err), '__BRA_MIN_OK__', 1, true) ~= nil, 'BATTLE_BeforeRoleAction err=' .. tostring(err))\n";
+
+  return dostring(L, harness, "@bcrun_battle_beforeroleaction_mincall");
+}
+
 static int run_attacklogic_tempvalue_harness(lua_State *L)
 {
   const char *harness =
@@ -1759,7 +1862,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|installyinjian|battle_rest|battle_beforeskillanimation_callback|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -1799,6 +1902,7 @@ int main(int argc, char **argv)
        strcmp(mode, "installyinjian") == 0 ||
        strcmp(mode, "battle_rest") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
+       strcmp(mode, "battle_beforeroleaction_mincall") == 0 ||
        strcmp(mode, "attacklogic_tempvalue") == 0 ||
        strcmp(mode, "attacklogic_tempvalue_chain") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0 ||
@@ -1816,6 +1920,8 @@ int main(int argc, char **argv)
       status = run_battle_rest_harness(L);
     } else if (strcmp(mode, "battle_beforeskillanimation_callback") == 0) {
       status = run_battle_beforeskillanimation_callback_harness(L);
+    } else if (strcmp(mode, "battle_beforeroleaction_mincall") == 0) {
+      status = run_battle_beforeroleaction_mincall_harness(L);
     } else if (strcmp(mode, "attacklogic_tempvalue_chain") == 0) {
       status = run_attacklogic_tempvalue_chain_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0) {

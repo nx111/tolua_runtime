@@ -60,7 +60,7 @@ static int settag = 0;
 static int vptr = 1;
 static char tolua_last_bytecode_debug[1024];
 static int tolua_bytecode_build_logged = 0;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto365-rolevalues-defcallback-c7";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto132-beforeroleaction-minc3";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -5747,6 +5747,58 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto202 direct C5 registration fix KSTR/KPRI/FNEW A30..A33 -> A31..A34");
+    }
+  }
+
+  /* proto132 BATTLE_BeforeRoleAction direct min window observed after conversion:
+       GGET A6; TGETS A6 D=1603; SUBNV A7 B=5 D=1283;
+       TGETS A8 B=4 D=1092; TGETS A8 B=8 D=2117; IST C=8; JMP; KSHORT A8 D=0; CALL A6 B2 C3
+     Source GC64 keeps A7 as the FR2 hole after the function slot, so the two
+     argument carriers and the conditional arg2 chain must move to A8/A9. */
+  if (ctx != NULL && ctx->proto_index == 132u) {
+    uint32_t p = 0;
+    for (p = 8; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8);
+
+      if (cop != BC_CALL || bc_a(c) != 6 || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_KSHORT || bc_a(i1) != 8 || bc_d(i1) != 0) continue;
+      if (o2 != BC_JMP || bc_a(i2) != 9 || bc_d(i2) != 32769) continue;
+      if (o3 != BC_IST || bc_a(i3) != 0 || bc_c(i3) != 8 || bc_d(i3) != 8) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 8 || bc_b(i4) != 8 || bc_c(i4) != 69 || bc_d(i4) != 2117) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 8 || bc_b(i5) != 4 || bc_c(i5) != 68 || bc_d(i5) != 1092) continue;
+      if (o6 != BC_SUBNV || bc_a(i6) != 7 || bc_b(i6) != 5 || bc_c(i6) != 3 || bc_d(i6) != 1283) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != 6 || bc_b(i7) != 6 || bc_c(i7) != 67 || bc_d(i7) != 1603) continue;
+      if (o8 != BC_GGET || bc_a(i8) != 6 || bc_d(i8) != 66) continue;
+
+      tolua_repack_remap_reg_range(&i6, o6, 7, 8, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i5, o5, 7, 8, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      tolua_repack_remap_reg_range(&i4, o4, 7, 8, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, 7, 8, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i1, o1, 7, 8, 8);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 9, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto132 BeforeRoleAction min C3 fix arg chain A7/A8 -> A8/A9");
     }
   }
 

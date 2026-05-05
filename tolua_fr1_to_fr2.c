@@ -7186,6 +7186,70 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  if (ctx != NULL && ctx->proto_index == 320u) {
+    uint32_t p = 0;
+    for (p = 4; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+
+      if (cop != BC_CALL || bc_a(c) != 16 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 18 || bc_d(i1) != 15) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 16 || bc_b(i2) != 16 || bc_c(i2) != 173 || bc_d(i2) != 4269) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 17 || bc_d(i3) != 16) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 16 || bc_b(i4) != 4 || bc_c(i4) != 14 || bc_d(i4) != 1038) continue;
+
+      setbc_a(&i3, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i1, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 20, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto320 debuff Remove fix A17/A18 -> A18/A19");
+    }
+  }
+
+  if (ctx != NULL && ctx->proto_index == 320u) {
+    uint32_t p = 0;
+    for (p = 4; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+
+      if (cop != BC_CALL || bc_a(c) != 17 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 19 || bc_d(i1) != 15) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 17 || bc_b(i2) != 17 || bc_c(i2) != 173 || bc_d(i2) != 4525) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 18 || bc_d(i3) != 17) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 17 || bc_b(i4) != 4 || bc_c(i4) != 14 || bc_d(i4) != 1038) continue;
+
+      setbc_a(&i3, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i1, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 21, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto320 debuff Remove fix A18/A19 -> A19/A20");
+    }
+  }
+
   if (ctx != NULL && ctx->proto_index == 0u) {
     uint32_t p = 0;
     for (p = 8; p + 2 < numbc; p++) {

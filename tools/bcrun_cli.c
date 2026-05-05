@@ -1210,11 +1210,11 @@ static int run_attacklogic_extendtalents3_registryprobe_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_attacklogic_extendtalents3_registryprobe");
 }
 
-static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode);
+static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode, int remove_mode);
 
 static int run_attacklogic_extendtalents2_misslog_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 1, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 1, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_gedanglog_harness(lua_State *L)
@@ -1603,16 +1603,18 @@ static int run_attacklogic_extendtalents2_chaizhaolog_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_attacklogic_extendtalents2_chaizhaolog");
 }
 
-static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode)
+static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode, int remove_mode)
 {
   const char *setup =
-      xixing_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true"
-                  : (misslog_mode ? "__MISSLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false"
-                                  : "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false");
+      remove_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = true"
+                  : (xixing_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true\n__REMOVE_EXPECT__ = false"
+                                 : (misslog_mode ? "__MISSLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false"
+                                                 : "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false"));
   const char *chunk_name =
-      xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixing_setup"
-                  : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog_setup"
-                                  : "@bcrun_attacklogic_extendtalents2_fullprobe_setup");
+      remove_mode ? "@bcrun_attacklogic_extendtalents2_removeprobe_setup"
+                  : (xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixing_setup"
+                                 : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog_setup"
+                                                 : "@bcrun_attacklogic_extendtalents2_fullprobe_setup"));
   const char *harness =
       "local function list(items)\n"
       "  local t = { Count = #items, Length = #items, __items = items, __create_lua_table_ok = true }\n"
@@ -1751,6 +1753,15 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "  end\n"
       "  return t\n"
       "end\n"
+      "local function make_remove_probe_list(expected_buff, sentinel)\n"
+      "  local t = make_buff_list({ expected_buff })\n"
+      "  function t:Remove(buff)\n"
+      "    assert(self == t, 'Remove self=' .. tostring(self))\n"
+      "    assert(buff == expected_buff, 'Remove buff=' .. tostring(buff))\n"
+      "    error(sentinel, 0)\n"
+      "  end\n"
+      "  return t\n"
+      "end\n"
       "local bf = { BattleTimestamp = 1, SpritesTable = {}, __log_count = 0, __attack_count = 0, __anim_count = 0 }\n"
       "function bf:Log(msg)\n"
       "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
@@ -1776,8 +1787,8 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "  assert(self == bf, 'bf.Attack self=' .. tostring(self))\n"
       "  self.__attack_count = self.__attack_count + 1\n"
       "end\n"
-      "local atk_talents = _G.__XIXING_EXPECT__ and { '吸星大法改' } or { '奇招怪式', '孤独求败' }\n"
-      "local def_talents = _G.__XIXING_EXPECT__ and {} or { '斗转星移', '心心相印' }\n"
+      "local atk_talents = _G.__REMOVE_EXPECT__ and {} or (_G.__XIXING_EXPECT__ and { '吸星大法改' } or { '奇招怪式', '孤独求败' })\n"
+      "local def_talents = _G.__REMOVE_EXPECT__ and {} or (_G.__XIXING_EXPECT__ and {} or { '斗转星移', '心心相印' })\n"
       "local atk_role, atk_skill = make_role('atk-role', 'atk-key', atk_talents, 0)\n"
       "local def_role = make_role('def-role', 'def-key', def_talents, 1)\n"
       "local function make_sprite(role, team)\n"
@@ -1956,7 +1967,47 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "local ok, ret = xpcall(function()\n"
       "  return AttackLogic_extendTalents2(sourceSprite, targetSprite, atk_skill, bf, result, prevRoleAtk, prevRoleDef)\n"
       "end, debug.traceback)\n"
-      "if _G.__MISSLOG_EXPECT__ then\n"
+      "if _G.__REMOVE_EXPECT__ then\n"
+      "  local function make_case(buff)\n"
+      "    BattleUtil.PrevRoles = {}\n"
+      "    local atk_role2, atk_skill2 = make_role('atk-role', 'atk-key', {}, 0)\n"
+      "    local def_role2 = make_role('def-role', 'def-key', {}, 1)\n"
+      "    local sourceSprite2 = make_sprite(atk_role2, 1)\n"
+      "    local targetSprite2 = make_sprite(def_role2, 2)\n"
+      "    atk_role2.Sprite = sourceSprite2\n"
+      "    def_role2.Sprite = targetSprite2\n"
+      "    bf.SpritesTable = { sourceSprite2, targetSprite2 }\n"
+      "    local prevRoleAtk2 = make_prev(atk_role2, sourceSprite2, atk_skill2)\n"
+      "    local prevRoleDef2 = make_prev(def_role2, targetSprite2, atk_skill2)\n"
+      "    prevRoleDef2.Miss = 0\n"
+      "    targetSprite2.Role.anti_debuffValue = 0\n"
+      "    local sentinel = '__REMOVE_' .. tostring(buff.Name) .. '_OK__'\n"
+      "    local result2 = strictify('result', {\n"
+      "      Hp = 60,\n"
+      "      Mp = 0,\n"
+      "      costBall = 0,\n"
+      "      Critical = false,\n"
+      "      Debuff = make_remove_probe_list(buff, sentinel),\n"
+      "      Buff = make_buff_list({}),\n"
+      "      castInfo = { Clear = function() end },\n"
+      "      AddCastInfo = function() end,\n"
+      "      AddAttackInfo = function() end\n"
+      "    })\n"
+      "    return atk_skill2, sourceSprite2, targetSprite2, prevRoleAtk2, prevRoleDef2, result2, sentinel\n"
+      "  end\n"
+      "  local buff1 = { Name = '留情', Level = 2, Round = 1, Property = 100 }\n"
+      "  local atk_skill1, sourceSprite1, targetSprite1, prevRoleAtk1, prevRoleDef1, result1, sentinel1 = make_case(buff1)\n"
+      "  local ok1, err1 = xpcall(function()\n"
+      "    return AttackLogic_extendTalents2(sourceSprite1, targetSprite1, atk_skill1, bf, result1, prevRoleAtk1, prevRoleDef1)\n"
+      "  end, debug.traceback)\n"
+      "  assert(ok1 == false and string.find(tostring(err1), sentinel1, 1, true) ~= nil, 'remove 留情 err=' .. tostring(err1))\n"
+      "  local buff2 = { Name = '封穴', Level = 2, Round = 1, Property = 100 }\n"
+      "  local atk_skill2, sourceSprite2, targetSprite2, prevRoleAtk2, prevRoleDef2, result2, sentinel2 = make_case(buff2)\n"
+      "  local ok2, err2 = xpcall(function()\n"
+      "    return AttackLogic_extendTalents2(sourceSprite2, targetSprite2, atk_skill2, bf, result2, prevRoleAtk2, prevRoleDef2)\n"
+      "  end, debug.traceback)\n"
+      "  assert(ok2 == false and string.find(tostring(err2), sentinel2, 1, true) ~= nil, 'remove 封穴 err=' .. tostring(err2))\n"
+      "elseif _G.__MISSLOG_EXPECT__ then\n"
       "  assert(ok == false, 'extendtalents2 returned before miss log')\n"
       "  assert(string.find(tostring(ret), '__MISS_OK__', 1, true) ~= nil, 'extendtalents2 err=' .. tostring(ret))\n"
       "elseif _G.__XIXING_EXPECT__ then\n"
@@ -1971,19 +2022,25 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
 
   if (dostring(L, setup, chunk_name)) return 1;
   return dostring(L, harness,
-                  xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixingcallback"
-                              : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog"
-                                              : "@bcrun_attacklogic_extendtalents2_fullprobe"));
+                  remove_mode ? "@bcrun_attacklogic_extendtalents2_removeprobe"
+                              : (xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixingcallback"
+                                             : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog"
+                                                             : "@bcrun_attacklogic_extendtalents2_fullprobe")));
 }
 
 static int run_attacklogic_extendtalents2_fullprobe_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_xixingcallback_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 1);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 1, 0);
+}
+
+static int run_attacklogic_extendtalents2_removeprobe_harness(lua_State *L)
+{
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 1);
 }
 
 static int run_attacklogic_extendtalents2_yihualog_harness(lua_State *L)
@@ -2232,7 +2289,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -2285,6 +2342,7 @@ int main(int argc, char **argv)
        strcmp(mode, "attacklogic_extendtalents2_misslog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_chaizhaolog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_fullprobe") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents2_removeprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_xixingcallback") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_yihualog") == 0)) {
     if (strcmp(mode, "getrrevrole") == 0) {
@@ -2321,6 +2379,8 @@ int main(int argc, char **argv)
       status = run_attacklogic_extendtalents2_chaizhaolog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_fullprobe") == 0) {
       status = run_attacklogic_extendtalents2_fullprobe_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents2_removeprobe") == 0) {
+      status = run_attacklogic_extendtalents2_removeprobe_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_xixingcallback") == 0) {
       status = run_attacklogic_extendtalents2_xixingcallback_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_yihualog") == 0) {

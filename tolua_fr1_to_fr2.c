@@ -7181,6 +7181,56 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
      Native GC64 keeps bf self on A15 and the concatenated message on A16. */
   if (ctx != NULL && ctx->proto_index == 320u) {
     uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 11 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 13 || bc_b(i1) != 13 || bc_c(i1) != 14 || bc_d(i1) != 3342) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 14 || bc_d(i2) != 40) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 13 || bc_b(i3) != 13 || bc_c(i3) != 4 || bc_d(i3) != 3332) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 13 || bc_b(i4) != 1 || bc_c(i4) != 27 || bc_d(i4) != 283) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 11 || bc_b(i5) != 3 || bc_c(i5) != 26 || bc_d(i5) != 794) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 12 || bc_d(i6) != 3) continue;
+
+      setbc_a(&i6, 13);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_a(&i4, 14);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 14);
+      setbc_b(&i3, 14);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 14);
+      setbc_b(&i1, 14);
+      setbc_c(&i1, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 15, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto320 bf.Log line6363 fix A12..A14 -> A13..A15");
+    }
+  }
+
+  /* proto320 bf.Log window at line6384 observed after conversion:
+       MOV A14 <- A3; TGETS A13 B=3 C=26; TGETS A15 B=0 C=27; TGETS A15 B=15 C=4;
+       KSTR A16 D=50; MOV A17 <- A12; KSTR A18 D=51; CAT A15 B=15 C=18; CALL A13 B1 C3
+     Native GC64 keeps bf self on A15 and the concatenated message on A16. */
+  if (ctx != NULL && ctx->proto_index == 320u) {
+    uint32_t p = 0;
     for (p = 8; p < numbc; p++) {
       BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
       BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);

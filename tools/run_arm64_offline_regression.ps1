@@ -1408,6 +1408,24 @@ function Test-AttackLogicExtendTalents2TalentLogWindows([string]$repoRootWsl, [s
                 '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=12\s+B=12\s+C=14\s+D=3086.*\r?\n' +
                 '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=9\s+B=1\s+C=3\s+D=259'
         }
+        @{
+            proto = 320
+            dis = (Join-Path $outDir "attacklogic.proto320.extendtalents2_talentlog_line6363.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=13\s+C=4\s+D=3332.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=14\s+B=0\s+C=40\s+D=40.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=13\s+B=13\s+C=14\s+D=3342.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=11\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=13\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=14\s+C=4\s+D=3588.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=15\s+B=0\s+C=40\s+D=40.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=14\s+B=14\s+C=15\s+D=3599.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=11\s+B=1\s+C=3\s+D=259'
+        }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]

@@ -9019,6 +9019,52 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto241 second two-arg direct call window observed after conversion:
+       GGET A17; TGETS A17 B=17 C=67 D=4419;
+       TGETS A18 B=15 C=31 D=3871; MULVN A18 B=18 C=7;
+       KSHORT A19 D=20; CALL A17 B2 C3
+     Native GC64 keeps the two arguments on A19/A20, leaving A18 as the FR2
+     hole after the function slot:
+       GGET A17; TGETS A17 B=17 C=67 D=4419;
+       TGETS A19 B=15 C=31 D=3871; MULVN A19 B=19 C=7;
+       KSHORT A20 D=20; CALL A17 B2 C3 */
+  if (ctx != NULL && ctx->proto_index == 241u) {
+    uint32_t p = 0;
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALL || bc_a(c) != 17 || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (o1 != BC_KSHORT || bc_a(i1) != 19 || bc_d(i1) != 20) continue;
+      if (o2 != BC_MULVN || bc_a(i2) != 18 || bc_b(i2) != 18 || bc_c(i2) != 7) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 18 || bc_b(i3) != 15 || bc_c(i3) != 31 || bc_d(i3) != 3871) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 17 || bc_b(i4) != 17 || bc_c(i4) != 67 || bc_d(i4) != 4419) continue;
+      if (o5 != BC_GGET || bc_a(i5) != 17 || bc_d(i5) != 21) continue;
+
+      setbc_a(&i3, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 19);
+      setbc_b(&i2, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 20, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto241 second two-arg call fix A18/A19 -> A19/A20");
+    }
+  }
+
   /* proto192 return-format window:
        GGET A5; TGETS A5; KSTR A6; TGETS A7; TGETS A8; CALLT A5 C4
      Native GC64 keeps the three argument carriers on A7/A8/A9, leaving A6 as

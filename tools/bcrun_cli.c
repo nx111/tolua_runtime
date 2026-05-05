@@ -1202,6 +1202,11 @@ static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
       "atk_role.level = 20\n"
       "def_role.Level = 20\n"
       "def_role.level = 20\n"
+      "if _G.__EXTENDTALENTS_MAX_EXPECT__ then\n"
+      "  atk_role.EquippedInternalSkill.YinBattle = 2\n"
+      "  atk_role.EquippedInternalSkill.YangBattle = 1\n"
+      "  def_role.EquippedInternalSkill.Name = '龙象般若功'\n"
+      "end\n"
       "atk_role.RoleValues = {}\n"
       "def_role.RoleValues = {}\n"
       "RuntimeData.Instance.GameMode = 'crazy'\n"
@@ -1214,10 +1219,15 @@ static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
       "assert(ok_rolevalues2, 'rolevalues_defcallback err=' .. tostring(err_rolevalues2))\n"
       "assert(type(prevRoleDef._talentMiss) == 'number', '_talentMiss=' .. type(prevRoleDef._talentMiss))\n"
       "sourceSprite:DeleteBuff('失准')\n"
-      "prevRoleAtk.workflows.extendTalents1_forAttacker = {}\n"
-      "prevRoleAtk.workflows.extendTalents1_forAttackerReal = {}\n"
-      "prevRoleDef.workflows.extendTalents1_forDefencer = {}\n"
-      "prevRoleDef.workflows.extendTalents1_forDefencerReal = {}\n"
+      "if not _G.__EXTENDTALENTS_MAX_EXPECT__ then\n"
+      "  prevRoleAtk.workflows.extendTalents1_forAttacker = {}\n"
+      "  prevRoleAtk.workflows.extendTalents1_forAttackerReal = {}\n"
+      "  prevRoleDef.workflows.extendTalents1_forDefencer = {}\n"
+      "  prevRoleDef.workflows.extendTalents1_forDefencerReal = {}\n"
+      "else\n"
+      "  assert(type(prevRoleDef.workflows.extendTalents1_forDefencer) == 'table', 'defencer1=' .. type(prevRoleDef.workflows.extendTalents1_forDefencer))\n"
+      "  assert(next(prevRoleDef.workflows.extendTalents1_forDefencer) ~= nil, 'defencer1_empty')\n"
+      "end\n"
       "atk_skill.attackResult_Hp = 100\n"
       "atk_skill.Tiaohe = false\n"
       "atk_skill.Suit = 1\n"
@@ -1226,6 +1236,120 @@ static int run_attacklogic_tempvalue_chain_harness(lua_State *L)
       "assert(type(prevRoleAtk.MulDmg) == 'number', 'extendtalents_mul=' .. type(prevRoleAtk.MulDmg))\n";
 
   return dostring(L, harness, "@bcrun_attacklogic_tempvalue_chain");
+}
+
+static int run_attacklogic_extendtalents_maxprobe_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData = RuntimeData or {}\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "Tools = Tools or {}\n"
+      "Tools.ProbabilityTest = function() return false end\n"
+      "Tools.GetRandomInt = function(a, b) return a or 0 end\n"
+      "local raw_math_max = math.max\n"
+      "math.max = function(...)\n"
+      "  local n = select('#', ...)\n"
+      "  for i = 1, n do\n"
+      "    local v = select(i, ...)\n"
+      "    if type(v) ~= 'number' then\n"
+      "      local info = debug.getinfo(2, 'l') or {}\n"
+      "      error('__EXTENDTALENTS_MAX_BAD__ line=' .. tostring(info.currentline) .. ' arg' .. i .. '=' .. type(v) .. ' value=' .. tostring(v), 0)\n"
+      "    end\n"
+      "  end\n"
+      "  return raw_math_max(...)\n"
+      "end\n"
+      "local bf = { BattleTimestamp = 1, SpritesTable = {} }\n"
+      "function bf:Log(msg)\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "end\n"
+      "local sourceRole = {\n"
+      "  Name = 'atk-role', Level = 20, level = 20,\n"
+      "  Attributes = { dingli = 120, gengu = 120, shenfa = 120 },\n"
+      "  AttributesFinal = { dingli = 120, gengu = 120, shenfa = 120 },\n"
+      "  EquippedInternalSkill = { YinBattle = 2, YangBattle = 1 }\n"
+      "}\n"
+      "local targetRole = {\n"
+      "  Name = 'def-role', Level = 20, level = 20,\n"
+      "  Attributes = { dingli = 120, gengu = 120, shenfa = 120 },\n"
+      "  AttributesFinal = { dingli = 120, gengu = 120, shenfa = 120 }\n"
+      "}\n"
+      "local source_buffs = {}\n"
+      "local target_buffs = {\n"
+      "  固守 = { Name = '固守', Level = 8, LeftRound = 2, Property = 0 },\n"
+      "  四圣附体 = { Name = '四圣附体', Level = 1, LeftRound = 2, Property = 0 }\n"
+      "}\n"
+      "local sourceSprite = {\n"
+      "  ParentBattleField = bf, Role = sourceRole, Team = 1, Name = sourceRole.Name,\n"
+      "  X = 1, Y = 1, Hp = 100, MaxHp = 100, Mp = 50, MaxMp = 100,\n"
+      "  Buffs = { Count = 0 }\n"
+      "}\n"
+      "function sourceSprite:HasBuff(name)\n"
+      "  assert(self == sourceSprite, 'source.HasBuff self=' .. tostring(self))\n"
+      "  return source_buffs[name] ~= nil\n"
+      "end\n"
+      "function sourceSprite:AddBuff(name, level, round)\n"
+      "  assert(self == sourceSprite, 'source.AddBuff self=' .. tostring(self))\n"
+      "  source_buffs[name] = { Name = name, Level = level or 0, LeftRound = round or 0, Property = 0 }\n"
+      "end\n"
+      "function sourceSprite:Set_needRefresh()\n"
+      "  assert(self == sourceSprite, 'source.Set_needRefresh self=' .. tostring(self))\n"
+      "end\n"
+      "local targetSprite = {\n"
+      "  ParentBattleField = bf, Role = targetRole, Team = 2, Name = targetRole.Name,\n"
+      "  X = 2, Y = 2, Hp = 100, MaxHp = 100, Mp = 50, MaxMp = 100,\n"
+      "  Buffs = { Count = 1, [0] = { Name = '离线负面', Level = 1, LeftRound = 1, Property = 0, IsDebuff = true } }\n"
+      "}\n"
+      "function targetSprite:HasBuff(name)\n"
+      "  assert(self == targetSprite, 'target.HasBuff self=' .. tostring(self))\n"
+      "  return target_buffs[name] ~= nil\n"
+      "end\n"
+      "function targetSprite:GetBuff(name)\n"
+      "  assert(self == targetSprite, 'target.GetBuff self=' .. tostring(self))\n"
+      "  return target_buffs[name]\n"
+      "end\n"
+      "function targetSprite:DeleteBuff(name)\n"
+      "  assert(self == targetSprite, 'target.DeleteBuff self=' .. tostring(self))\n"
+      "  target_buffs[name] = nil\n"
+      "end\n"
+      "function targetSprite:AddBuffOnly2(name, level, round)\n"
+      "  assert(self == targetSprite, 'target.AddBuffOnly2 self=' .. tostring(self))\n"
+      "  target_buffs[name] = { Name = name, Level = level or 0, LeftRound = round or 0, Property = 0 }\n"
+      "end\n"
+      "function targetSprite:Set_needRefresh()\n"
+      "  assert(self == targetSprite, 'target.Set_needRefresh self=' .. tostring(self))\n"
+      "end\n"
+      "local skill = { attackResult_Hp = 100 }\n"
+      "local prevRoleAtk = {\n"
+      "  MulDmg = 1, AddDmg = 0, AddDmgPct = 0,\n"
+      "  role = sourceRole,\n"
+      "  talents = { 拳系装备 = false, 剑系装备 = false, 刀系装备 = false, 奇门装备 = false },\n"
+      "  roleTalents = {},\n"
+      "  InternalSkillName = 'offline'\n"
+      "}\n"
+      "local prevRoleDef = {\n"
+      "  talents = { 玄武之甲 = false },\n"
+      "  role = targetRole,\n"
+      "  InternalSkillName = '龙象般若功'\n"
+      "}\n"
+      "local wf = BattleUtil.GetWorkflowForTalent('extendTalents1_forDefencer')\n"
+      "assert(type(wf) == 'table', 'wf=' .. type(wf))\n"
+      "assert(type(wf.callbacks) == 'table', 'callbacks=' .. type(wf.callbacks))\n"
+      "local hits = 0\n"
+      "local rows = {}\n"
+      "for talent, cb in pairs(wf.callbacks) do\n"
+      "  local info = debug.getinfo(cb, 'S') or {}\n"
+      "  rows[#rows + 1] = tostring(talent) .. ':' .. tostring(info.linedefined)\n"
+      "  if type(info.linedefined) == 'number' and info.linedefined >= 3905 and info.linedefined <= 4031 then\n"
+      "    hits = hits + 1\n"
+      "    local ok, err = pcall(cb, sourceSprite, targetSprite, skill, bf, {}, false, prevRoleAtk, prevRoleDef)\n"
+      "    assert(ok, 'talent=' .. tostring(talent) .. ' err=' .. tostring(err))\n"
+      "  end\n"
+      "end\n"
+      "table.sort(rows)\n"
+      "assert(hits >= 1, 'hits=' .. tostring(hits) .. ' rows=' .. table.concat(rows, '|'))\n";
+  return dostring(L, harness, "@bcrun_attacklogic_extendtalents_maxprobe");
 }
 
 static int run_attacklogic_extendtalents_bilianglog_harness(lua_State *L)
@@ -1819,7 +1943,9 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "  for i = 1, n do\n"
       "    local v = select(i, ...)\n"
       "    if type(v) ~= 'number' then\n"
-      "      error('math.max arg' .. i .. '=' .. type(v) .. ' value=' .. tostring(v), 0)\n"
+      "      local info = debug.getinfo(2, 'l') or {}\n"
+      "      local prefix = _G.__EXTENDTALENTS_MAX_EXPECT__ and '__EXTENDTALENTS_MAX_BAD__' or 'math.max'\n"
+      "      error(prefix .. ' line=' .. tostring(info.currentline) .. ' arg' .. i .. '=' .. type(v) .. ' value=' .. tostring(v), 0)\n"
       "    end\n"
       "  end\n"
       "  return raw_math_max(...)\n"
@@ -1881,11 +2007,15 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "end\n"
       "local atk_talents = (_G.__REMOVE_EXPECT__ or _G.__XILOG_EXPECT__) and {} or (_G.__XIXING_EXPECT__ and { '吸星大法改' } or { '奇招怪式', '孤独求败' })\n"
       "local def_talents = (_G.__REMOVE_EXPECT__ or _G.__XILOG_EXPECT__) and {} or (_G.__XIXING_EXPECT__ and {} or { '斗转星移', '心心相印' })\n"
+      "if _G.__EXTENDTALENTS_MAX_EXPECT__ then\n"
+      "  def_talents = { '百兵谱', '鬼言确信', '绿毛龟', '爱是一道光', '灵守', '龙象般若无量境', '菩提', '狂怒' }\n"
+      "end\n"
       "local atk_role, atk_skill = make_role('atk-role', 'atk-key', atk_talents, 0)\n"
       "local def_role = make_role('def-role', 'def-key', def_talents, 1)\n"
       "local function make_sprite(role, team)\n"
       "  local buffs = {}\n"
       "  local vars = { [0] = 0, [1] = 0 }\n"
+      "  local buff_items = _G.__EXTENDTALENTS_MAX_EXPECT__ and { { Name = '离线负面', Level = 1, LeftRound = 1, Property = 0, IsDebuff = true } } or {}\n"
       "  local sprite = {\n"
       "    ParentBattleField = bf,\n"
       "    Role = role,\n"
@@ -1900,7 +2030,8 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "    MaxMp = 50,\n"
       "    Balls = 0,\n"
       "    Sp = 20,\n"
-      "    Shield = 0\n"
+      "    Shield = 0,\n"
+      "    Buffs = make_buff_list(buff_items)\n"
       "  }\n"
       "  function sprite:HasBuff(name)\n"
       "    assert(self == sprite, 'HasBuff self=' .. tostring(self))\n"
@@ -2393,7 +2524,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -2441,6 +2572,7 @@ int main(int argc, char **argv)
        strcmp(mode, "battle_minusskillcd_skilllog") == 0 ||
        strcmp(mode, "attacklogic_tempvalue") == 0 ||
        strcmp(mode, "attacklogic_tempvalue_chain") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents_maxprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents_bilianglog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents3_registryprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0 ||
@@ -2475,6 +2607,8 @@ int main(int argc, char **argv)
       status = run_battle_minusskillcd_skilllog_harness(L);
     } else if (strcmp(mode, "attacklogic_tempvalue_chain") == 0) {
       status = run_attacklogic_tempvalue_chain_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents_maxprobe") == 0) {
+      status = run_attacklogic_extendtalents_maxprobe_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents_bilianglog") == 0) {
       status = run_attacklogic_extendtalents_bilianglog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents3_registryprobe") == 0) {

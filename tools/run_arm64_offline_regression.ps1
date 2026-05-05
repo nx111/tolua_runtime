@@ -1658,6 +1658,48 @@ function Test-AttackLogicExtendTalentsBiliangLogShift([string]$repoRootWsl, [str
     }
 }
 
+function Test-AttackLogicExtendTalentsMaxCallWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 241 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto241 failed exit=$code")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $badPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=17\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=17\s+C=67\s+D=4419.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=15\s+C=31\s+D=3871.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=18\s+B=18\s+C=7\s+D=4615.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=19\s+B=0\s+C=20\s+D=20.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=17\s+B=2\s+C=3\s+D=515'
+    $goodPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=17\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=17\s+C=67\s+D=4419.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=15\s+C=31\s+D=3871.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=19\s+B=19\s+C=7\s+D=4871.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=20\s+B=0\s+C=20\s+D=20.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=17\s+B=2\s+C=3\s+D=515'
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ([regex]::Matches($disText, $badPattern).Count -ne 0) {
+        $fails.Add("residual bad proto241 extendtalents max call window")
+    }
+    if ([regex]::Matches($disText, $goodPattern).Count -eq 0) {
+        $fails.Add("missing corrected proto241 extendtalents max call window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicExtendTalents2GedangLogShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -2649,6 +2691,19 @@ function Test-AttackLogicTempValueChainHarness([string]$repoRootWsl, [string]$ba
     }
 }
 
+function Test-AttackLogicExtendTalentsMaxProbeHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents_maxprobe > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicExtendTalents2GedangLogHarness([string]$repoRootWsl, [string]$battleBytecodeWsl, [string]$attacklogicBytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -3188,6 +3243,16 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $extendTalentsMaxDis = Join-Path $outAbs "attacklogic.proto241.extendtalents_maxcall.dis.txt"
+    $extendTalentsMaxCheck = Test-AttackLogicExtendTalentsMaxCallWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalentsMaxDis
+    $extendTalentsMaxFailures = @($extendTalentsMaxCheck.failures).Count
+    if (-not $extendTalentsMaxCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extendTalentsMaxCheck.failures) {
+            Write-Warning "[attacklogic extendtalents max call shape] $msg"
+        }
+    }
+
     $extendTalentsBiliangDis = Join-Path $outAbs "attacklogic.proto241.extendtalents_bilianglog.dis.txt"
     $extendTalentsBiliangCheck = Test-AttackLogicExtendTalentsBiliangLogShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalentsBiliangDis
     $extendTalentsBiliangFailures = @($extendTalentsBiliangCheck.failures).Count
@@ -3339,6 +3404,12 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $extendTalentsMaxLog = Join-Path $outAbs "attacklogic.extendtalents_maxprobe.log"
+    $extendTalentsMaxProbeCheck = Test-AttackLogicExtendTalentsMaxProbeHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalentsMaxLog
+    if (-not $extendTalentsMaxProbeCheck.ok) {
+        Write-Warning "[attacklogic extendtalents maxprobe] diagnostic-only exit=$($extendTalentsMaxProbeCheck.exit_code): $extendTalentsMaxLog"
+    }
+
     # The combo harness is back in gating only because it now drives the
     # RoleValuesDef callback path that single-file probes missed; static proto365
     # window checks remain the primary proof point for the exact call shape.
@@ -3376,7 +3447,7 @@ if (Test-Path $attacklogicPath) {
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
         rolevalues_log_fail   = $roleValuesLogFailures
-        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
+        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
         extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures)

@@ -6664,6 +6664,95 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto364 first extendTalents3 attacker callback window after generic
+     copy-fallback:
+       MOV A20 <- A19; MOV A22 <- A0; ... MOV A30 <- A7;
+       MOV A21 <- A20; MOV A20 <- A19; MOV A30 <- A29; ... MOV A22 <- A21;
+       CALL A20 B1 C10
+     The backwards MOV chain is an over-shift artifact. Keep the already
+     corrected A22..A30 argument setup and neutralize the second shift pass. */
+  if (ctx != NULL && ctx->proto_index == 364u) {
+    uint32_t p = 0;
+    for (p = 21; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCIns i9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 9) * 4, be);
+      BCIns i10 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 10) * 4, be);
+      BCIns i11 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 11) * 4, be);
+      BCIns i12 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 12) * 4, be);
+      BCIns i13 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 13) * 4, be);
+      BCIns i14 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 14) * 4, be);
+      BCIns i15 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 15) * 4, be);
+      BCIns i16 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 16) * 4, be);
+      BCIns i17 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 17) * 4, be);
+      BCIns i18 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 18) * 4, be);
+      BCIns i19 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 19) * 4, be);
+      BCIns i20 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 20) * 4, be);
+      BCIns i21 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 21) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8), o9 = bc_op(i9);
+      BCOp o10 = bc_op(i10), o11 = bc_op(i11), o12 = bc_op(i12), o13 = bc_op(i13);
+      BCOp o14 = bc_op(i14), o15 = bc_op(i15), o16 = bc_op(i16), o17 = bc_op(i17);
+      BCOp o18 = bc_op(i18), o19 = bc_op(i19), o20 = bc_op(i20), o21 = bc_op(i21);
+
+      if (cop != BC_CALL || bc_a(c) != 20 || bc_b(c) != 1 || bc_c(c) != 10) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 22 || bc_d(i1) != 21) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 23 || bc_d(i2) != 22) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 24 || bc_d(i3) != 23) continue;
+      if (o4 != BC_MOV || bc_a(i4) != 25 || bc_d(i4) != 24) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 26 || bc_d(i5) != 25) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 27 || bc_d(i6) != 26) continue;
+      if (o7 != BC_MOV || bc_a(i7) != 28 || bc_d(i7) != 27) continue;
+      if (o8 != BC_MOV || bc_a(i8) != 29 || bc_d(i8) != 28) continue;
+      if (o9 != BC_MOV || bc_a(i9) != 30 || bc_d(i9) != 29) continue;
+      if (o10 != BC_MOV || bc_a(i10) != 20 || bc_d(i10) != 19) continue;
+      if (o11 != BC_MOV || bc_a(i11) != 21 || bc_d(i11) != 20) continue;
+      if (o12 != BC_MOV || bc_a(i12) != 30 || bc_d(i12) != 7) continue;
+      if (o13 != BC_MOV || bc_a(i13) != 29 || bc_d(i13) != 6) continue;
+      if (o14 != BC_MOV || bc_a(i14) != 28 || bc_d(i14) != 14) continue;
+      if (o15 != BC_MOV || bc_a(i15) != 27 || bc_d(i15) != 5) continue;
+      if (o16 != BC_MOV || bc_a(i16) != 26 || bc_d(i16) != 4) continue;
+      if (o17 != BC_MOV || bc_a(i17) != 25 || bc_d(i17) != 3) continue;
+      if (o18 != BC_MOV || bc_a(i18) != 24 || bc_d(i18) != 2) continue;
+      if (o19 != BC_MOV || bc_a(i19) != 23 || bc_d(i19) != 1) continue;
+      if (o20 != BC_MOV || bc_a(i20) != 22 || bc_d(i20) != 0) continue;
+      if (o21 != BC_MOV || bc_a(i21) != 20 || bc_d(i21) != 19) continue;
+
+      setbc_d(&i11, 21);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 11) * 4, (uint32_t)i11, be);
+      setbc_d(&i10, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 10) * 4, (uint32_t)i10, be);
+      setbc_d(&i9, 30);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 9) * 4, (uint32_t)i9, be);
+      setbc_d(&i8, 29);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 8) * 4, (uint32_t)i8, be);
+      setbc_d(&i7, 28);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 7) * 4, (uint32_t)i7, be);
+      setbc_d(&i6, 27);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_d(&i5, 26);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_d(&i4, 25);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_d(&i3, 24);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_d(&i2, 23);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_d(&i1, 22);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto364 attacker callback C10 over-shift fix keep A22..A30 and neutralize duplicate shift");
+    }
+  }
+
   /* proto316 AttackLogic small callback bf.Log window observed after conversion:
        MOV A10 <- A3; TGETS A9 B=3 C=16; KSTR A11 D=17; TGETS A12 B=0 C=18;
        TGETS A12 B=12 C=19; KSTR A13 D=20; CAT A11 B=11 C=13; CALL A9 B1 C3

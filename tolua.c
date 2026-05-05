@@ -58,7 +58,7 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto241-biliang-catcall";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260505-proto364-extend3-prevroleatk-bool";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)

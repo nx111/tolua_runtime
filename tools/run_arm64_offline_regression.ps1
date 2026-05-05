@@ -728,15 +728,67 @@ function Test-AttackLogicExtend3PrevRoleDefCallWindow([string]$repoRootWsl, [str
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=6\s+D=6.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=7\s+D=7.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=10\s+D=266'
+    $overshiftPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=19\s+D=19.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=7\s+D=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=20\s+D=20.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=19\s+D=19.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=29\s+D=29.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=26\s+D=26.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=25\s+D=25.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=24\s+D=24.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=23\s+D=23.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=22\s+D=22.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=10\s+D=266'
+    $firstWindowFixedPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=19\s+D=19.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=7\s+D=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=20\s+D=20.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=30\s+B=0\s+C=30\s+D=30.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=29\s+B=0\s+C=29\s+D=29.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=28\s+B=0\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=27\s+B=0\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=26\s+B=0\s+C=26\s+D=26.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=25\s+D=25.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=24\s+D=24.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=0\s+C=23\s+D=23.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=22\s+D=22.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=10\s+D=266'
     $badCount = [regex]::Matches($disText, $badPattern).Count
     $goodCount = [regex]::Matches($disText, $goodPattern).Count
+    $overshiftCount = [regex]::Matches($disText, $overshiftPattern).Count
+    $firstWindowFixedCount = [regex]::Matches($disText, $firstWindowFixedPattern).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badCount -ne 0) {
         $fails.Add("residual bad proto364 callback C10 window")
     }
+    if ($overshiftCount -ne 0) {
+        $fails.Add("residual proto364 attacker callback C10 over-shift window")
+    }
     if ($goodCount -eq 0) {
         $fails.Add("missing corrected proto364 callback C10 window")
+    }
+    if ($firstWindowFixedCount -eq 0) {
+        $fails.Add("missing corrected proto364 attacker callback C10 window")
     }
 
     return [pscustomobject]@{

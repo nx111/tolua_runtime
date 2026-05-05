@@ -1779,37 +1779,177 @@ function Test-BuffOnRoundBuffMaxCallShape([string]$repoRootWsl, [string]$bytecod
     }
 
     $disText = Get-Content $disPath -Raw
-    $badPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=3\s+C=6\s+D=774.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=6\s+B=6\s+C=17.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=7\s+B=0\s+C=8\s+D=8.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=47.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=9\s+B=0\s+C=1\s+D=1.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=2\s+C=3.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=6\s+B=6\s+C=7.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
-    $goodPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=3\s+C=6.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=17.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=1\s+D=1.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+    $shapeChecks = @(
+        @{
+            name = 'poison max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=3\s+C=6\s+D=774.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=6\s+B=6\s+C=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=7\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=9\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=6\s+B=6\s+C=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=3\s+C=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+        },
+        @{
+            name = 'hp-percent max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=3\s+C=(?:37|7)\s+D=(?:805|775).*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=6\s+B=6\s+C=4\s+D=1540.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=7\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=47\s+D=1839.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=9\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=6\s+B=6\s+C=7\s+D=1543.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=3\s+C=(?:37|7).*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=4.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+        },
+        @{
+            name = 'attribute max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47\s+D=2095.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=3\s+C=16\s+D=784.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+SUBVV\s+A=10\s+B=10\s+C=6\s+D=2566.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TSETS\s+A=8\s+B=3\s+C=16\s+D=784'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47\s+D=2095.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=3\s+C=16\s+D=784.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+SUBVV\s+A=11\s+B=11\s+C=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TSETS\s+A=8\s+B=3\s+C=16\s+D=784'
+        },
+        @{
+            name = 'mid-poison max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=7\s+B=0\s+C=0\s+D=0.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=14\s+D=1806.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=15\s+D=1807.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=7\s+B=7\s+C=3\s+D=1795.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=7\s+B=7\s+C=8\s+D=1800.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47\s+D=2095.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=10\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8\s+D=1800.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVV\s+A=6\s+B=6\s+C=7\s+D=1543.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=8\s+B=0\s+C=0\s+D=0.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=14.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=15.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=8\s+B=8\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=8\s+B=8\s+C=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=9\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=9\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=12\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=9\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=8\s+B=8\s+C=9.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVV\s+A=7\s+B=7\s+C=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+        },
+        @{
+            name = 'late-poison max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=3\s+C=6\s+D=774.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=6\s+B=6\s+C=4\s+D=1540.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=8\s+B=0\s+C=0\s+D=0.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=14\s+D=2062.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=8\s+B=8\s+C=(?:9|21).*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=8\s+B=8\s+C=5\s+D=2053.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=8\s+B=8\s+C=20\s+D=2068.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=9\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=9\s+C=47\s+D=2351.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=9\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=8\s+B=8\s+C=9\s+D=2057.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVV\s+A=7\s+B=7\s+C=8\s+D=1800.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=2\s+C=2'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=3\s+C=6.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=4.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=8\s+B=0\s+C=0.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=14.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=9\s+B=9\s+C=(?:9|21).*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=9\s+B=9\s+C=5.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=9\s+B=9\s+C=20.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=10\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=10\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=13\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=10\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=9\s+B=9\s+C=10.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+ADDVV\s+A=8\s+B=8\s+C=9.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=2\s+C=2'
+        },
+        @{
+            name = 'toad max window'
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=7\s+B=7\s+C=2\s+D=1794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=5\s+D=1797.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=22\s+D=1814.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47\s+D=2095.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=10\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8\s+D=1800.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=2\s+C=2'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+ADDVN\s+A=8\s+B=8\s+C=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=8\s+B=8\s+C=5.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=8\s+B=8\s+C=22.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=9\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=9\s+C=47.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=2\s+D=2.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=12\s+B=0\s+C=1\s+D=1.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=9\s+B=2\s+C=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=8\s+B=8\s+C=9.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=8\s+D=8.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=2\s+C=2'
+        }
+    )
     $badLogPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=0\s+C=1\s+D=1.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=20\s+D=1556.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=21\s+D=1557.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=8\s+B=0\s+C=43\s+D=43.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=3\s+C=4\s+D=772.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=10\s+B=0\s+C=74\s+D=74.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=10\s+B=0\s+C=(?:63|69|72|74|76|79|82)\s+D=(?:63|69|72|74|76|79|82).*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=5\s+D=5.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=12\s+B=0\s+C=25\s+D=25.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=8\s+B=8\s+C=12.*\r?\n' +
@@ -1820,17 +1960,19 @@ function Test-BuffOnRoundBuffMaxCallShape([string]$repoRootWsl, [string]$bytecod
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=21\s+D=1557.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=9\s+B=0\s+C=43\s+D=43.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=3\s+C=4\s+D=772.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=74\s+D=74.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=(?:63|69|72|74|76|79|82)\s+D=(?:63|69|72|74|76|79|82).*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=5\s+D=5.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=13\s+B=0\s+C=25\s+D=25.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=9\s+B=9\s+C=13.*\r?\n' +
-        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=1\s+C=3'
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=13\s+B=0\s+C=25\s+D=25.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=9\s+B=9\s+C=13.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=1\s+C=3'
     $fails = New-Object System.Collections.Generic.List[string]
-    if ([regex]::Matches($disText, $badPattern).Count -ne 0) {
-        $fails.Add("residual bad proto0 BUFF_OnRoundBuff math.max window")
-    }
-    if ([regex]::Matches($disText, $goodPattern).Count -eq 0) {
-        $fails.Add("missing corrected proto0 BUFF_OnRoundBuff math.max window")
+    foreach ($check in $shapeChecks) {
+        if ([regex]::Matches($disText, $check.bad).Count -ne 0) {
+            $fails.Add("residual bad proto0 BUFF_OnRoundBuff $($check.name)")
+        }
+        if ([regex]::Matches($disText, $check.good).Count -eq 0) {
+            $fails.Add("missing corrected proto0 BUFF_OnRoundBuff $($check.name)")
+        }
     }
     if ([regex]::Matches($disText, $badLogPattern).Count -ne 0) {
         $fails.Add("residual bad proto0 BUFF_OnRoundBuff bf.Log self window")

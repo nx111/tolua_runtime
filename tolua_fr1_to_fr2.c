@@ -6341,6 +6341,56 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  if (ctx != NULL) {
+    uint32_t p = 0;
+    for (p = 7; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7);
+
+      if (cop != BC_CALL || bc_a(c) != 7 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 9 || bc_b(i1) != 9 || bc_c(i1) != 11 || bc_d(i1) != 2315) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 11 || bc_d(i2) != 13) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 10 || bc_b(i3) != 10 || bc_c(i3) != 1 || bc_d(i3) != 2561) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 10 || bc_b(i4) != 1 || bc_c(i4) != 12 || bc_d(i4) != 268) continue;
+      if (o5 != BC_KSTR || bc_a(i5) != 9 || bc_d(i5) != 11) continue;
+      if (o6 != BC_TGETS || bc_a(i6) != 7 || bc_b(i6) != 3 || bc_c(i6) != 10 || bc_d(i6) != 778) continue;
+      if (o7 != BC_MOV || bc_a(i7) != 8 || bc_d(i7) != 3) continue;
+
+      setbc_a(&i7, 9);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 7) * 4, (uint32_t)i7, be);
+      setbc_a(&i5, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i4, 11);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 11);
+      setbc_b(&i3, 11);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 12);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 10);
+      setbc_b(&i1, 10);
+      setbc_c(&i1, 12);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 13, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply xilog bf.Log self fix A8..A11 -> A9..A12");
+    }
+  }
+
   /* proto320 miss-log window observed after conversion:
        MOV A11 <- A3; TGETS A10 B=3 C=26; TGETS A12 B=1 C=27; TGETS A12 B=12 C=4;
        KSTR A13 D=28; CAT A12 B=12 C=13; CALL A10 B1 C3

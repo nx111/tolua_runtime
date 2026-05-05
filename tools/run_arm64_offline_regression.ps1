@@ -408,6 +408,63 @@ function Test-BattleBeforeRoleActionMinCallHarness([string]$repoRootWsl, [string
     }
 }
 
+function Test-BattleBeforeRoleActionHasBuffShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1143 1149 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto132 1143..1149 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 1143; op = "ISNEXT"; a = 13; b = 128; c = 26; d = 32794; tag = "pc1143" },
+        @{ pc = 1144; op = "MOV";    a = 17; b = 0;   c = 1;  d = 1;     tag = "pc1144" },
+        @{ pc = 1145; op = "TGETS";  a = 15; b = 1;   c = 49; d = 305;   tag = "pc1145" },
+        @{ pc = 1146; op = "MOV";    a = 18; b = 0;   c = 14; d = 14;    tag = "pc1146" },
+        @{ pc = 1147; op = "CALL";   a = 15; b = 2;   c = 3;  d = 515;   tag = "pc1147" },
+        @{ pc = 1148; op = "ISF";    a = 0;  b = 0;   c = 15; d = 15;    tag = "pc1148" },
+        @{ pc = 1149; op = "JMP";    a = 16; b = 128; c = 20; d = 32788; tag = "pc1149" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicTempValueArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -1788,7 +1845,7 @@ if ($shouldBuild) {
     $buildCmd = @(
         "cd '$repoRootWsl'",
         "cd ./luajit-2.1/src && make clean >/dev/null && make XCFLAGS='-DLUAJIT_ENABLE_GC64' >/dev/null && cd ../..",
-        "gcc -O0 -g -DTOLUA_REPACK_DEBUG -I. -I./luajit-2.1/src tools/bcconv_cli.c tolua.c int64.c uint64.c ./luajit-2.1/src/lj_bc.o ./luajit-2.1/src/libluajit.a -lm -ldl -o tools/bcconv_cli_wsl_dbg",
+        "gcc -O0 -g -DTOLUA_REPACK_DEBUG -I. -I./luajit-2.1/src tools/bcconv_cli.c tolua_fr1_to_fr2.c int64.c uint64.c ./luajit-2.1/src/lj_bc.o ./luajit-2.1/src/libluajit.a -lm -ldl -o tools/bcconv_cli_wsl_dbg",
         "gcc -O0 -g -DTOLUA_REPACK_DEBUG -I. -I./luajit-2.1/src tools/bcrun_cli.c int64.c uint64.c ./luajit-2.1/src/libluajit.a -lm -ldl -o tools/bcrun_cli_wsl",
         "gcc -O2 -I./luajit-2.1/src tools/bc_dump_proto.c -o tools/bc_dump_proto_wsl"
     ) -join " && "
@@ -1893,7 +1950,17 @@ foreach ($name in $targets) {
             Write-Warning "[battle beforeroleaction harness] failed exit=$($beforeRoleActionHarnessCheck.exit_code): $beforeRoleActionLog"
         }
 
-        $beforeRoleActionFailures = $beforeRoleActionShapeFailures + $beforeRoleActionHarnessFailures
+        $beforeRoleActionHasBuffDis = Join-Path $outAbs "battle.proto132.beforeroleaction_hasbuff.dis.txt"
+        $beforeRoleActionHasBuffCheck = Test-BattleBeforeRoleActionHasBuffShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionHasBuffDis
+        $beforeRoleActionHasBuffFailures = @($beforeRoleActionHasBuffCheck.failures).Count
+        if (-not $beforeRoleActionHasBuffCheck.ok) {
+            $failed = $true
+            foreach ($msg in $beforeRoleActionHasBuffCheck.failures) {
+                Write-Warning "[battle beforeroleaction hasbuff] $msg"
+            }
+        }
+
+        $beforeRoleActionFailures = $beforeRoleActionShapeFailures + $beforeRoleActionHarnessFailures + $beforeRoleActionHasBuffFailures
 
         $beforeSkillAnimationDis = Join-Path $outAbs "battle.proto177.beforeskillanimation.dis.txt"
         $beforeSkillAnimationShapeCheck = Test-BattleBeforeSkillAnimationCallbackShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationDis

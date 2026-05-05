@@ -8,6 +8,7 @@ function Get-ChangedFiles([string[]]$argsForDiff) {
 
 $trackedTargets = @(
     "tolua.c",
+    "tolua_fr1_to_fr2.c",
     "Plugins/Android/libs/arm64-v8a/libtolua.so"
 )
 

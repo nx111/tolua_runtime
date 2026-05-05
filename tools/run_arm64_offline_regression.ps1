@@ -259,6 +259,75 @@ function Test-BattleRestHarness([string]$repoRootWsl, [string]$bytecodeWsl, [str
     }
 }
 
+function Test-BattleRestHuanhunMinHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_rest_huanhun_mincall > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-BattleRegisterWorkflowForSkillsEntryShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 6 35 41 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto6 35..41 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 35; op = "GGET";  a = 12; b = 0;  c = 7;  d = 7 },
+        @{ pc = 36; op = "TGETS"; a = 12; b = 12; c = 8;  d = 3080 },
+        @{ pc = 37; op = "TGETV"; a = 14; b = 6;  c = 11; d = 1547 },
+        @{ pc = 38; op = "TDUP";  a = 15; b = 0;  c = 9;  d = 9 },
+        @{ pc = 39; op = "TSETS"; a = 2;  b = 15; c = 10; d = 3850 },
+        @{ pc = 40; op = "TSETS"; a = 3;  b = 15; c = 11; d = 3851 },
+        @{ pc = 41; op = "CALL";  a = 12; b = 1;  c = 3;  d = 259 }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("pc$($check.pc) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("pc$($check.pc) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-BattleBeforeSkillAnimationCallbackShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -2796,6 +2865,26 @@ foreach ($name in $targets) {
             $failed = $true
             Write-Warning "[battle rest] harness failed exit=$($restHarnessCheck.exit_code): $restHarnessLog"
         }
+
+        $restHuanhunDis = Join-Path $outAbs "battle.proto6.registerskills_entry.dis.txt"
+        $restHuanhunShapeCheck = Test-BattleRegisterWorkflowForSkillsEntryShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $restHuanhunDis
+        $restHuanhunShapeFailures = @($restHuanhunShapeCheck.failures).Count
+        if (-not $restHuanhunShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $restHuanhunShapeCheck.failures) {
+                Write-Warning "[battle registerskills entry] $msg"
+            }
+        }
+
+        $restHuanhunLog = Join-Path $outAbs "battle.rest_huanhun_mincall.log"
+        $restHuanhunHarnessCheck = Test-BattleRestHuanhunMinHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $restHuanhunLog
+        $restHuanhunHarnessFailures = if ($restHuanhunHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $restHuanhunHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle rest huanhun] harness failed exit=$($restHuanhunHarnessCheck.exit_code): $restHuanhunLog"
+        }
+
+        $restHarnessFailures += ($restHuanhunShapeFailures + $restHuanhunHarnessFailures)
 
         $beforeRoleActionDis = Join-Path $outAbs "battle.proto132.beforeroleaction_mincall.dis.txt"
         $beforeRoleActionShapeCheck = Test-BattleBeforeRoleActionMinCallShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionDis

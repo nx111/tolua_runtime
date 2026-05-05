@@ -6391,6 +6391,37 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  if (ctx != NULL) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 12 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_TSETS || bc_a(i1) != 3 || bc_b(i1) != 14 || bc_c(i1) != 11 || bc_d(i1) != 3595) continue;
+      if (o2 != BC_TSETS || bc_a(i2) != 2 || bc_b(i2) != 14 || bc_c(i2) != 10 || bc_d(i2) != 3594) continue;
+      if (o3 != BC_TDUP || bc_a(i3) != 15 || bc_d(i3) != 9) continue;
+      if (o4 != BC_TGETV || bc_a(i4) != 14 || bc_b(i4) != 6 || bc_c(i4) != 11 || bc_d(i4) != 1547) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 12 || bc_b(i5) != 12 || bc_c(i5) != 8 || bc_d(i5) != 3080) continue;
+      if (o6 != BC_GGET || bc_a(i6) != 12 || bc_d(i6) != 7) continue;
+
+      setbc_b(&i2, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_b(&i1, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply RegisterWorkflowForSkills entry-table fix TSETS B14 -> B15");
+    }
+  }
+
   /* proto320 miss-log window observed after conversion:
        MOV A11 <- A3; TGETS A10 B=3 C=26; TGETS A12 B=1 C=27; TGETS A12 B=12 C=4;
        KSTR A13 D=28; CAT A12 B=12 C=13; CALL A10 B1 C3

@@ -496,6 +496,95 @@ static int run_battle_rest_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_battle_rest");
 }
 
+static int run_battle_rest_huanhun_mincall_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "BattleUtil.PrevRoles = BattleUtil.PrevRoles or {}\n"
+      "local wf = BattleUtil.GetWorkflowForSkill('BeforeSkillAnimation', '还魂咒')\n"
+      "assert(type(wf) == 'table' and #wf >= 1, 'huanhun wf=' .. type(wf) .. ' count=' .. tostring(wf and #wf or 'nil'))\n"
+      "Tools.ProbabilityTest = function(v)\n"
+      "  return true\n"
+      "end\n"
+      "local bf = { SpritesTable = {} }\n"
+      "local ai = {}\n"
+      "function ai:IsEmptyBlock(x, y)\n"
+      "  return true\n"
+      "end\n"
+      "bf.AI = ai\n"
+      "function bf:GetSkillTarget(sprite, idx)\n"
+      "  assert(self == bf, 'bf.GetSkillTarget self=' .. tostring(self))\n"
+      "  return idx == 0 and 5 or 6\n"
+      "end\n"
+      "function bf:GetSprite(x, y)\n"
+      "  assert(self == bf, 'bf.GetSprite self=' .. tostring(self))\n"
+      "  return nil\n"
+      "end\n"
+      "function bf:resurrectionRole() end\n"
+      "function bf:ShowAnimation() end\n"
+      "function bf:DoAttackInfo() end\n"
+      "local role = { Name = 'xinmo-role' }\n"
+      "function role:GetAnimation() return 'anim' end\n"
+      "local currentSprite = {\n"
+      "  ParentBattleField = bf,\n"
+      "  Role = role,\n"
+      "  Team = 1,\n"
+      "  X = 1,\n"
+      "  Y = 1,\n"
+      "  Hp = 60,\n"
+      "  MaxHp = 100\n"
+      "}\n"
+      "function currentSprite:SetAnimation() end\n"
+      "local enemyRole = { Name = 'enemy', Attack = 50 }\n"
+      "function enemyRole:GetAnimation() return 'enemy_anim' end\n"
+      "local enemySprite = {\n"
+      "  ParentBattleField = bf,\n"
+      "  Role = enemyRole,\n"
+      "  Team = 2,\n"
+      "  X = 2,\n"
+      "  Y = 2,\n"
+      "  Hp = 80,\n"
+      "  MaxHp = 80\n"
+      "}\n"
+      "function enemySprite:CloneEquipment() end\n"
+      "bf.SpritesTable = { currentSprite, enemySprite }\n"
+      "BattleUtil.PrevRoles[currentSprite] = { workflows = {} }\n"
+      "BattleUtil.PrevRoles[enemySprite] = { workflows = {} }\n"
+      "local skill = { Name = '还魂咒', Animation = 'skill_anim', AttackTime = 1 }\n"
+      "local prevRole = {}\n"
+      "local raw_min = math.min\n"
+      "math.min = function(a, b, ...)\n"
+      "  if type(a) ~= 'number' or type(b) ~= 'number' then\n"
+      "    error('__HUANHUN_MIN_BAD__ a=' .. type(a) .. ':' .. tostring(a) .. ' b=' .. type(b) .. ':' .. tostring(b), 0)\n"
+      "  end\n"
+      "  error('__HUANHUN_MIN_OK__ a=' .. tostring(a) .. ' b=' .. tostring(b), 0)\n"
+      "end\n"
+      "local ok, err\n"
+      "local lines = {}\n"
+      "local errors = {}\n"
+      "local hit = false\n"
+      "for i, entry in ipairs(wf) do\n"
+      "  assert(type(entry) == 'table', 'huanhun entry[' .. tostring(i) .. ']=' .. type(entry))\n"
+      "  assert(type(entry.callback) == 'function', 'huanhun entry[' .. tostring(i) .. '].callback=' .. type(entry.callback))\n"
+      "  ok, err = xpcall(function() return entry.callback(bf, currentSprite, skill, 1, prevRole) end, debug.traceback)\n"
+      "  if not ok and string.find(tostring(err), '__HUANHUN_MIN_', 1, true) ~= nil then\n"
+      "    hit = true\n"
+      "    break\n"
+      "  end\n"
+      "  lines[#lines + 1] = tostring(err):match('tmp.lua:(%d+)') or 'nil'\n"
+      "  errors[#errors + 1] = tostring(err)\n"
+      "end\n"
+      "math.min = raw_min\n"
+      "assert(hit, 'lines=' .. table.concat(lines, ',') .. ' first=' .. table.concat(errors, ' || '))\n"
+      "assert(ok == false, 'huanhun callback returned unexpectedly')\n"
+      "assert(string.find(tostring(err), '__HUANHUN_MIN_', 1, true) ~= nil, 'huanhun err=' .. tostring(err))\n";
+
+  return dostring(L, harness, "@bcrun_battle_rest_huanhun_mincall");
+}
+
 static int run_battle_beforeskillanimation_callback_harness(lua_State *L)
 {
   const char *harness =
@@ -2304,7 +2393,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -2345,6 +2434,7 @@ int main(int argc, char **argv)
        strcmp(mode, "buff_onroundbuff_recoverymin") == 0 ||
        strcmp(mode, "installyinjian") == 0 ||
        strcmp(mode, "battle_rest") == 0 ||
+       strcmp(mode, "battle_rest_huanhun_mincall") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
        strcmp(mode, "battle_beforeroleaction_mincall") == 0 ||
        strcmp(mode, "battle_beforeroleaction_logprobe") == 0 ||
@@ -2373,6 +2463,8 @@ int main(int argc, char **argv)
       status = run_installyinjian_harness(L);
     } else if (strcmp(mode, "battle_rest") == 0) {
       status = run_battle_rest_harness(L);
+    } else if (strcmp(mode, "battle_rest_huanhun_mincall") == 0) {
+      status = run_battle_rest_huanhun_mincall_harness(L);
     } else if (strcmp(mode, "battle_beforeskillanimation_callback") == 0) {
       status = run_battle_beforeskillanimation_callback_harness(L);
     } else if (strcmp(mode, "battle_beforeroleaction_mincall") == 0) {

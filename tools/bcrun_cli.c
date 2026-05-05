@@ -171,6 +171,48 @@ static int run_checktrigger_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_checktrigger");
 }
 
+static int run_buff_onroundbuff_maxcall_harness(lua_State *L)
+{
+  const char *harness =
+      "local raw_math_max = math.max\n"
+      "math.max = function(...)\n"
+      "  local argc = select('#', ...)\n"
+      "  local a1 = select(1, ...)\n"
+      "  local a2 = select(2, ...)\n"
+      "  if argc >= 2 and (type(a1) ~= 'number' or type(a2) ~= 'number') then\n"
+      "    local info = debug.getinfo(2, 'l') or {}\n"
+      "    error('__BUFF_MAX_BAD__ line=' .. tostring(info.currentline) .. ' a1=' .. type(a1) .. ':' .. tostring(a1) .. ' a2=' .. type(a2) .. ':' .. tostring(a2), 0)\n"
+      "  end\n"
+      "  return raw_math_max(...)\n"
+      "end\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "local prevRole = { talents = { 百毒不侵 = false, 毒素抗性 = false } }\n"
+      "function BattleUtil.GetRrevRole(owner)\n"
+      "  return prevRole\n"
+      "end\n"
+      "local bf = {}\n"
+      "function bf:Log(msg)\n"
+      "  local info = debug.getinfo(2, 'l') or {}\n"
+      "  assert(self == bf, 'bf.Log line=' .. tostring(info.currentline) .. ' self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log line=' .. tostring(info.currentline) .. ' msg=' .. type(msg))\n"
+      "end\n"
+      "local owner = {\n"
+      "  Hp = 100,\n"
+      "  MaxHp = 100,\n"
+      "  Name = 'offline-owner',\n"
+      "  ParentBattleField = bf\n"
+      "}\n"
+      "function owner:AttackInfo(msg, color)\n"
+      "  assert(self == owner, 'AttackInfo self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'AttackInfo msg=' .. type(msg))\n"
+      "end\n"
+      "local buff = { Name = '中毒加深', Level = 2, Owner = owner }\n"
+      "BUFF_OnRoundBuff(buff, {})\n"
+      "assert(owner.Hp == 99, 'owner.Hp=' .. tostring(owner.Hp))\n";
+  return dostring(L, harness, "@bcrun_buff_onroundbuff_maxcall");
+}
+
 static int run_registerprevrole_trigger_harness(lua_State *L)
 {
   const char *harness =
@@ -1884,7 +1926,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|installyinjian|battle_rest|battle_beforeskillanimation_callback|battle_beforeroleaction_mincall|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -1921,6 +1963,7 @@ int main(int argc, char **argv)
       (strcmp(mode, "getrrevrole") == 0 ||
        strcmp(mode, "registerprevrole") == 0 ||
        strcmp(mode, "checktrigger") == 0 ||
+       strcmp(mode, "buff_onroundbuff_maxcall") == 0 ||
        strcmp(mode, "installyinjian") == 0 ||
        strcmp(mode, "battle_rest") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
@@ -1937,6 +1980,8 @@ int main(int argc, char **argv)
       status = run_getrrevrole_harness(L);
     } else if (strcmp(mode, "registerprevrole") == 0) {
       status = run_registerprevrole_trigger_harness(L);
+    } else if (strcmp(mode, "buff_onroundbuff_maxcall") == 0) {
+      status = run_buff_onroundbuff_maxcall_harness(L);
     } else if (strcmp(mode, "installyinjian") == 0) {
       status = run_installyinjian_harness(L);
     } else if (strcmp(mode, "battle_rest") == 0) {

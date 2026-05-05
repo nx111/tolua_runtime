@@ -1746,6 +1746,99 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
     }
 }
 
+function Test-BuffOnRoundBuffMaxCallShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 0 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto0 failed exit=$code")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $badPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=3\s+C=6\s+D=774.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=6\s+B=6\s+C=17.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=7\s+B=0\s+C=8\s+D=8.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=7\s+C=47.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=9\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=2\s+C=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=6\s+B=6\s+C=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+    $goodPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=5\s+B=0\s+C=8\s+D=8.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=5\s+B=5\s+C=30\s+D=1310.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=3\s+C=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVN\s+A=7\s+B=7\s+C=17.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=8\s+B=0\s+C=8\s+D=8.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=8\s+C=47.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULVV\s+A=7\s+B=7\s+C=8.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=7\s+D=7.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=5\s+B=2\s+C=2'
+    $badLogPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=20\s+D=1556.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=7\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=21\s+D=1557.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=8\s+B=0\s+C=43\s+D=43.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=3\s+C=4\s+D=772.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=10\s+B=0\s+C=74\s+D=74.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=12\s+B=0\s+C=25\s+D=25.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=8\s+B=8\s+C=12.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=1\s+C=3'
+    $goodLogPattern = '(?ms)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=0\s+C=1\s+D=1.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=20\s+D=1556.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=6\s+D=6.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=6\s+B=6\s+C=21\s+D=1557.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=9\s+B=0\s+C=43\s+D=43.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=3\s+C=4\s+D=772.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=74\s+D=74.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=5\s+D=5.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=13\s+B=0\s+C=25\s+D=25.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=9\s+B=9\s+C=13.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=6\s+B=1\s+C=3'
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ([regex]::Matches($disText, $badPattern).Count -ne 0) {
+        $fails.Add("residual bad proto0 BUFF_OnRoundBuff math.max window")
+    }
+    if ([regex]::Matches($disText, $goodPattern).Count -eq 0) {
+        $fails.Add("missing corrected proto0 BUFF_OnRoundBuff math.max window")
+    }
+    if ([regex]::Matches($disText, $badLogPattern).Count -ne 0) {
+        $fails.Add("residual bad proto0 BUFF_OnRoundBuff bf.Log self window")
+    }
+    if ([regex]::Matches($disText, $goodLogPattern).Count -eq 0) {
+        $fails.Add("missing corrected proto0 BUFF_OnRoundBuff bf.Log self window")
+    }
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BuffOnRoundBuffMaxCallHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' buff_onroundbuff_maxcall > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicTempValueHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -2066,6 +2159,67 @@ if (Test-Path $gameEnginePath) {
     }
 }
 
+$buffName = "buff.lua"
+$buffPath = Join-Path $BytecodeDir $buffName
+if (Test-Path $buffPath) {
+    $outPath = Join-Path $outAbs "$buffName.fr2.bin"
+    $logPath = Join-Path $outAbs "$buffName.dbg.log"
+    $inWsl = Convert-ToWslPath $buffPath
+    $outWsl = Convert-ToWslPath $outPath
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcconv_cli_wsl_dbg '$inWsl' '$outWsl' 1 > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    $converted = Get-LogCount $logPath "converted "
+    $convFail = Get-LogCount $logPath "bytecode conversion failed"
+    $copyFallback = Get-LogCount $logPath "copy-fallback"
+
+    $buffShapeDis = Join-Path $outAbs "buff.proto0.onroundbuff_maxcall.dis.txt"
+    $buffShapeCheck = Test-BuffOnRoundBuffMaxCallShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $buffShapeDis
+    $buffShapeFailures = @($buffShapeCheck.failures).Count
+    if (-not $buffShapeCheck.ok) {
+        $failed = $true
+        foreach ($msg in $buffShapeCheck.failures) {
+            Write-Warning "[buff onroundbuff shape] $msg"
+        }
+    }
+
+    $buffHarnessLog = Join-Path $outAbs "buff.onroundbuff_maxcall.log"
+    $buffHarnessCheck = Test-BuffOnRoundBuffMaxCallHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $buffHarnessLog
+    $buffHarnessFailures = if ($buffHarnessCheck.ok) { 0 } else { 1 }
+    if (-not $buffHarnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[buff onroundbuff harness] failed exit=$($buffHarnessCheck.exit_code): $buffHarnessLog"
+    }
+
+    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
+        $failed = $true
+    }
+
+    $summary += [pscustomobject]@{
+        file                = $buffName
+        exit_code           = $code
+        converted_lines     = $converted
+        conversion_failed   = $convFail
+        register_overflow   = 0
+        kstr_tdup_rejects   = 0
+        table_style_guards  = 0
+        copy_fallback_hits  = $copyFallback
+        workflow_shift_hits = 0
+        workflow_shift_fail = 0
+        doalltrigger_fail   = 0
+        registerprevrole_fail = 0
+        rest_fail           = 0
+        beforeroleaction_fail = 0
+        beforeskillanimation_fail = 0
+        onroundbuff_fail    = ($buffShapeFailures + $buffHarnessFailures)
+        log_path            = $logPath
+        out_path            = $outPath
+    }
+}
+
 $attacklogicName = "AttackLogic.lua"
 $attacklogicPath = Join-Path $BytecodeDir $attacklogicName
 if (Test-Path $attacklogicPath) {
@@ -2336,6 +2490,12 @@ elseif (Test-Path $baselinePath) {
                 $failed = $true
             }
             if ($row.PSObject.Properties.Name -contains 'extendtalents2_log_fail' -and $row.extendtalents2_log_fail -ne 0) {
+                $failed = $true
+            }
+            continue
+        }
+        if ($row.file -eq "buff.lua") {
+            if ($row.PSObject.Properties.Name -contains 'onroundbuff_fail' -and $row.onroundbuff_fail -ne 0) {
                 $failed = $true
             }
             continue

@@ -742,13 +742,13 @@ function Test-BattleBeforeRoleActionMaxCallShape([string]$repoRootWsl, [string]$
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1159 1165 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1156 1162 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 1159..1165 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 1156..1162 failed exit=$code")
         }
     }
 
@@ -768,13 +768,13 @@ function Test-BattleBeforeRoleActionMaxCallShape([string]$repoRootWsl, [string]$
     }
 
     $checks = @(
-        @{ pc = 1159; op = "GGET";   a = 17; b = 0;  c = 66;  d = 66;   tag = "pc1159" },
-        @{ pc = 1160; op = "TGETS";  a = 17; b = 17; c = 80;  d = 4432; tag = "pc1160" },
-        @{ pc = 1161; op = "KSHORT"; a = 19; b = 0;  c = 0;   d = 0;    tag = "pc1161" },
-        @{ pc = 1162; op = "TGETS";  a = 20; b = 15; c = 106; d = 3946; tag = "pc1162" },
-        @{ pc = 1163; op = "SUBVV";  a = 20; b = 20; c = 16;  d = 5136; tag = "pc1163" },
-        @{ pc = 1164; op = "CALL";   a = 17; b = 2;  c = 3;   d = 515;  tag = "pc1164" },
-        @{ pc = 1165; op = "TSETS";  a = 17; b = 15; c = 106; d = 3946; tag = "pc1165" }
+        @{ pc = 1156; op = "GGET";   a = 17; b = 0;  c = 66;  d = 66;   tag = "pc1156" },
+        @{ pc = 1157; op = "TGETS";  a = 17; b = 17; c = 80;  d = 4432; tag = "pc1157" },
+        @{ pc = 1158; op = "KSHORT"; a = 19; b = 0;  c = 0;   d = 0;    tag = "pc1158" },
+        @{ pc = 1159; op = "TGETS";  a = 20; b = 15; c = 106; d = 3946; tag = "pc1159" },
+        @{ pc = 1160; op = "SUBVV";  a = 20; b = 20; c = 16;  d = 5136; tag = "pc1160" },
+        @{ pc = 1161; op = "CALL";   a = 17; b = 2;  c = 3;   d = 515;  tag = "pc1161" },
+        @{ pc = 1162; op = "TSETS";  a = 17; b = 15; c = 106; d = 3946; tag = "pc1162" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -826,14 +826,14 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
     $dumpCmd = @(
         "cd '$repoRootWsl'",
         "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 655 664 > '$disWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1177 1186 >> '$disWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1203 1210 >> '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1174 1183 >> '$disWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1200 1207 >> '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 655..664 or 1177..1186 or 1203..1210 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 655..664 or 1174..1183 or 1200..1207 failed exit=$code")
         }
     }
 
@@ -863,14 +863,14 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
         @{ pc = 662; op = "MOV";   a = 10; b = 0; c = 8;  d = 8;    tag = "pc662" },
         @{ pc = 663; op = "MOV";   a = 8;  b = 0; c = 7;  d = 7;    tag = "pc663" },
         @{ pc = 664; op = "CALL";  a = 8;  b = 1; c = 3;  d = 259;  tag = "pc664" },
-        @{ pc = 1177; op = "MOV";   a = 11; b = 0; c = 0;  d = 0;    tag = "pc1177" },
-        @{ pc = 1178; op = "TGETS"; a = 9;  b = 0; c = 57; d = 57;   tag = "pc1178" },
-        @{ pc = 1185; op = "CAT";   a = 12; b = 12; c = 16; d = 3088; tag = "pc1185" },
-        @{ pc = 1186; op = "CALL";  a = 9;  b = 1; c = 3;  d = 259;  tag = "pc1186" },
-        @{ pc = 1203; op = "MOV";   a = 9;  b = 0; c = 0;  d = 0;    tag = "pc1203" },
-        @{ pc = 1204; op = "TGETS"; a = 7;  b = 0; c = 57; d = 57;   tag = "pc1204" },
-        @{ pc = 1209; op = "CAT";   a = 10; b = 10; c = 12; d = 2572; tag = "pc1209" },
-        @{ pc = 1210; op = "CALL";  a = 7;  b = 1; c = 3;  d = 259;  tag = "pc1210" }
+        @{ pc = 1174; op = "MOV";   a = 11; b = 0; c = 0;  d = 0;    tag = "pc1174" },
+        @{ pc = 1175; op = "TGETS"; a = 9;  b = 0; c = 57; d = 57;   tag = "pc1175" },
+        @{ pc = 1182; op = "CAT";   a = 12; b = 12; c = 16; d = 3088; tag = "pc1182" },
+        @{ pc = 1183; op = "CALL";  a = 9;  b = 1; c = 3;  d = 259;  tag = "pc1183" },
+        @{ pc = 1200; op = "MOV";   a = 9;  b = 0; c = 0;  d = 0;    tag = "pc1200" },
+        @{ pc = 1201; op = "TGETS"; a = 7;  b = 0; c = 57; d = 57;   tag = "pc1201" },
+        @{ pc = 1206; op = "CAT";   a = 10; b = 10; c = 12; d = 2572; tag = "pc1206" },
+        @{ pc = 1207; op = "CALL";  a = 7;  b = 1; c = 3;  d = 259;  tag = "pc1207" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -934,11 +934,11 @@ function Test-BattleBeforeRoleActionHasBuffShape([string]$repoRootWsl, [string]$
     }
 
     $checks = @(
-        @{ pc = 1146; op = "ISNEXT"; a = 13; b = 128; c = 26; d = 32794; tag = "pc1146" },
-        @{ pc = 1147; op = "MOV";    a = 17; b = 0;   c = 1;  d = 1;     tag = "pc1147" },
-        @{ pc = 1148; op = "TGETS";  a = 15; b = 1;   c = 49; d = 305;   tag = "pc1148" },
-        @{ pc = 1149; op = "MOV";    a = 18; b = 0;   c = 14; d = 14;    tag = "pc1149" },
-        @{ pc = 1150; op = "CALL";   a = 15; b = 2;   c = 3;  d = 515;   tag = "pc1150" }
+        @{ pc = 1143; op = "ISNEXT"; a = 13; b = 128; c = 26; d = 32794; tag = "pc1143" },
+        @{ pc = 1144; op = "MOV";    a = 17; b = 0;   c = 1;  d = 1;     tag = "pc1144" },
+        @{ pc = 1145; op = "TGETS";  a = 15; b = 1;   c = 49; d = 305;   tag = "pc1145" },
+        @{ pc = 1146; op = "MOV";    a = 18; b = 0;   c = 14; d = 14;    tag = "pc1146" },
+        @{ pc = 1147; op = "CALL";   a = 15; b = 2;   c = 3;  d = 515;   tag = "pc1147" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -963,13 +963,13 @@ function Test-BattleBeforeRoleActionGetBuffShape([string]$repoRootWsl, [string]$
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1154 1157 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1151 1154 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 1154..1157 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 1151..1154 failed exit=$code")
         }
     }
 
@@ -989,10 +989,10 @@ function Test-BattleBeforeRoleActionGetBuffShape([string]$repoRootWsl, [string]$
     }
 
     $checks = @(
-        @{ pc = 1154; op = "MOV";   a = 17; b = 0; c = 1;   d = 1;   tag = "pc1154" },
-        @{ pc = 1155; op = "TGETS"; a = 15; b = 1; c = 105; d = 361; tag = "pc1155" },
-        @{ pc = 1156; op = "MOV";   a = 18; b = 0; c = 14;  d = 14;  tag = "pc1156" },
-        @{ pc = 1157; op = "CALL";  a = 15; b = 2; c = 3;   d = 515; tag = "pc1157" }
+        @{ pc = 1151; op = "MOV";   a = 17; b = 0; c = 1;   d = 1;   tag = "pc1151" },
+        @{ pc = 1152; op = "TGETS"; a = 15; b = 1; c = 105; d = 361; tag = "pc1152" },
+        @{ pc = 1153; op = "MOV";   a = 18; b = 0; c = 14;  d = 14;  tag = "pc1153" },
+        @{ pc = 1154; op = "CALL";  a = 15; b = 2; c = 3;   d = 515; tag = "pc1154" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -1017,13 +1017,13 @@ function Test-BattleBeforeRoleActionDeleteBuffShape([string]$repoRootWsl, [strin
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1168 1172 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1165 1169 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 1168..1172 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 1165..1169 failed exit=$code")
         }
     }
 
@@ -1043,11 +1043,11 @@ function Test-BattleBeforeRoleActionDeleteBuffShape([string]$repoRootWsl, [strin
     }
 
     $checks = @(
-        @{ pc = 1168; op = "JMP";   a = 17; b = 128; c = 4;  d = 32772; tag = "pc1168" },
-        @{ pc = 1169; op = "MOV";   a = 19; b = 0;   c = 1;  d = 1;     tag = "pc1169" },
-        @{ pc = 1170; op = "TGETS"; a = 17; b = 1;   c = 51; d = 307;   tag = "pc1170" },
-        @{ pc = 1171; op = "MOV";   a = 20; b = 0;   c = 14; d = 14;    tag = "pc1171" },
-        @{ pc = 1172; op = "CALL";  a = 17; b = 1;   c = 3;  d = 259;   tag = "pc1172" }
+        @{ pc = 1165; op = "JMP";   a = 17; b = 128; c = 4;  d = 32772; tag = "pc1165" },
+        @{ pc = 1166; op = "MOV";   a = 19; b = 0;   c = 1;  d = 1;     tag = "pc1166" },
+        @{ pc = 1167; op = "TGETS"; a = 17; b = 1;   c = 51; d = 307;   tag = "pc1167" },
+        @{ pc = 1168; op = "MOV";   a = 20; b = 0;   c = 14; d = 14;    tag = "pc1168" },
+        @{ pc = 1169; op = "CALL";  a = 17; b = 1;   c = 3;  d = 259;   tag = "pc1169" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -1135,13 +1135,13 @@ function Test-BattleBeforeRoleActionNeedRefreshShape([string]$repoRootWsl, [stri
     $dumpCmd = @(
         "cd '$repoRootWsl'",
         "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 647 649 > '$disWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 878 880 >> '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 875 877 >> '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 647..649 or 878..880 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 647..649 or 875..877 failed exit=$code")
         }
     }
 
@@ -1164,9 +1164,9 @@ function Test-BattleBeforeRoleActionNeedRefreshShape([string]$repoRootWsl, [stri
         @{ pc = 647; op = "MOV";   a = 9;  b = 0; c = 1;   d = 1;   tag = "pc647" },
         @{ pc = 648; op = "TGETS"; a = 7;  b = 1; c = 116; d = 372; tag = "pc648" },
         @{ pc = 649; op = "CALL";  a = 7;  b = 1; c = 2;   d = 258; tag = "pc649" },
-        @{ pc = 878; op = "MOV";   a = 18; b = 0; c = 1;   d = 1;   tag = "pc878" },
-        @{ pc = 879; op = "TGETS"; a = 16; b = 1; c = 116; d = 372; tag = "pc879" },
-        @{ pc = 880; op = "CALL";  a = 16; b = 1; c = 2;   d = 258; tag = "pc880" }
+        @{ pc = 875; op = "MOV";   a = 18; b = 0; c = 1;   d = 1;   tag = "pc875" },
+        @{ pc = 876; op = "TGETS"; a = 16; b = 1; c = 116; d = 372; tag = "pc876" },
+        @{ pc = 877; op = "CALL";  a = 16; b = 1; c = 2;   d = 258; tag = "pc877" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -1923,15 +1923,24 @@ function Test-AttackLogicExtendTalentsHasBuffShift([string]$repoRootWsl, [string
             continue
         }
 
-        $goodMatch = ($i2.op -eq 'MOV' -and $i2.a -eq 18 -and $i2.d -eq 18 -and
-                      $i1.op -eq 'MOV' -and $i1.a -eq 17 -and $i1.d -eq 17)
-        if ($goodMatch) {
-            $goodPcs.Add($c.pc)
-            continue
-        }
-
         if ($i2.op -eq 'MOV' -and $i1.op -eq 'MOV') {
             $weirdPcs.Add("pc=$($c.pc) got=MOVA$($i2.a)<-A$($i2.d);MOVA$($i1.a)<-A$($i1.d)")
+        }
+    }
+    for ($idx = 3; $idx -lt $rows.Count; $idx++) {
+        $c = $rows[$idx]
+        $i1 = $rows[$idx - 1]
+        $i2 = $rows[$idx - 2]
+        $i3 = $rows[$idx - 3]
+
+        $goodMatch = (
+            $c.op -eq 'CALL' -and $c.a -eq 15 -and $c.b -eq 2 -and $c.c -eq 3 -and
+            $i1.op -eq 'KSTR' -and $i1.a -eq 18 -and $i1.d -eq 85 -and
+            $i2.op -eq 'TGETS' -and $i2.a -eq 15 -and $i2.b -eq 0 -and $i2.c -eq 28 -and $i2.d -eq 28 -and
+            $i3.op -eq 'MOV' -and $i3.a -eq 17 -and $i3.d -eq 0
+        )
+        if ($goodMatch) {
+            $goodPcs.Add($c.pc)
         }
     }
 

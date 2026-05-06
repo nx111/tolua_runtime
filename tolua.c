@@ -58,7 +58,7 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260506-extendtalents2-xiaoyaolog-proto308";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260506-extendtalents-hasbuff-preshift";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)

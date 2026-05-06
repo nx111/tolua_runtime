@@ -2614,6 +2614,47 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
         old_next_writer_pc == new_writer_pc &&
         old_next_writer_pc != old_writer_pc &&
         old_next_writer_op == new_writer_op &&
+        pc >= 3) {
+      BCIns consumer = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)pc * 4, be);
+      BCIns prev1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 1) * 4, be);
+      BCIns prev2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 2) * 4, be);
+      BCIns prev3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(pc - 3) * 4, be);
+      BCOp prev1_op = bc_op(prev1);
+      BCOp prev2_op = bc_op(prev2);
+      BCOp prev3_op = bc_op(prev3);
+      BCReg base = bc_a(consumer);
+
+      if (bc_op(consumer) == BC_CALL &&
+          bc_c(consumer) == 3 &&
+          old_first == (BCReg)(base + 1) &&
+          new_first == (BCReg)(base + 2) &&
+          new_last == (BCReg)(base + 3) &&
+          new_writer_pc == (uint32_t)(pc - 3) &&
+          prev3_op == BC_MOV &&
+          prev2_op == BC_TGETS &&
+          prev1_op == BC_KSTR &&
+          bc_a(prev3) == new_first &&
+          bc_a(prev2) == base &&
+          bc_a(prev1) == new_last &&
+          !tolua_ins_writes_reg(prev1_op, prev1, old_first) &&
+          !tolua_ins_writes_reg(prev2_op, prev2, old_first) &&
+          !tolua_ins_writes_reg(prev3_op, prev3, old_first)) {
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "accept existing FR2 slice: pre-shifted CALL(C=3) hole preserved old=[%u,%u] new=[%u,%u]",
+                         (unsigned int)old_first, (unsigned int)old_last,
+                         (unsigned int)new_first, (unsigned int)new_last);
+        return 1;
+      }
+    }
+    if (have_old_next &&
+        old_last == (BCReg)(old_first + 1) &&
+        (old_writer_op == BC_CALL || old_writer_op == BC_CALLM ||
+         old_writer_op == BC_CALLT || old_writer_op == BC_CALLMT ||
+         old_writer_op == BC_VARG || old_writer_op == BC_ITERC ||
+         old_writer_op == BC_ITERN) &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_next_writer_op == new_writer_op &&
         old_next_writer_op != BC_CALL &&
         old_next_writer_op != BC_CALLM &&
         old_next_writer_op != BC_CALLT &&
@@ -9457,42 +9498,6 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply proto308 bf.Log fix A12..A19 -> A13..A20");
-    }
-  }
-
-  /* proto241 HasBuff self-clobber window observed after conversion:
-       MOV A17 <- A0; TGETS A15 B=0 C=28 D=28; KSTR A18 D=85;
-       MOV A18 <- A17; MOV A17 <- A16; CALL A15 B2 C3
-     Native GC64 keeps only:
-       MOV A17 <- A0; TGETS A15 B=0 C=28 D=28; KSTR A18 D=85; CALL A15 B2 C3
-     so the two inserted MOVs must become self-copies to preserve the original
-     method self/arg slots without changing surrounding frame layout. */
-  if (ctx != NULL && ctx->proto_index == 241u) {
-    uint32_t p = 0;
-    for (p = 5; p < numbc; p++) {
-      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
-      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
-      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
-      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
-      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
-      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
-      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
-      BCOp o4 = bc_op(i4), o5 = bc_op(i5);
-
-      if (cop != BC_CALL || bc_a(c) != 15 || bc_b(c) != 2 || bc_c(c) != 3) continue;
-      if (o1 != BC_MOV || bc_a(i1) != 17 || bc_d(i1) != 16) continue;
-      if (o2 != BC_MOV || bc_a(i2) != 18 || bc_d(i2) != 17) continue;
-      if (o3 != BC_KSTR || bc_a(i3) != 18 || bc_d(i3) != 85) continue;
-      if (o4 != BC_TGETS || bc_a(i4) != 15 || bc_b(i4) != 0 || bc_c(i4) != 28 || bc_d(i4) != 28) continue;
-      if (o5 != BC_MOV || bc_a(i5) != 17 || bc_d(i5) != 0) continue;
-
-      setbc_d(&i2, 18);
-      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
-      setbc_d(&i1, 17);
-      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
-
-      TOLUA_REPACK_LOG(ctx, p,
-                       "apply proto241 HasBuff self fix MOV A18<-A17/A17<-A16 -> self-copies");
     }
   }
 

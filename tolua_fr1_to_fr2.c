@@ -9556,6 +9556,64 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback second C7
+     window observed after conversion:
+       GGET A14; TGETS A14 B=14 C=26 D=3610;
+       MOV A15 <- A3; MOV A16 <- A6; MOV A17 <- A5;
+       MOV A18 <- A0; MOV A19 <- A12; KPRI A20; CALL A14 B1 C7
+     The earlier sibling C7 window in this proto is already aligned to GC64,
+     but this second one still leaves A15 as the missing FR2 hole after the
+     function slot. Only move this exact later window from A15..A20 to
+     A16..A21. */
+  if (ctx != NULL && ctx->proto_index == 297u) {
+    uint32_t p = 0;
+    for (p = 8; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8);
+
+      if (cop != BC_CALL || bc_a(c) != 14 || bc_b(c) != 1 || bc_c(c) != 7) continue;
+      if (o1 != BC_KPRI || bc_a(i1) != 20 || bc_d(i1) != 1) continue;
+      if (o2 != BC_MOV || bc_a(i2) != 19 || bc_d(i2) != 12) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 18 || bc_d(i3) != 0) continue;
+      if (o4 != BC_MOV || bc_a(i4) != 17 || bc_d(i4) != 5) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 16 || bc_d(i5) != 6) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 15 || bc_d(i6) != 3) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != 14 || bc_b(i7) != 14 || bc_c(i7) != 26 || bc_d(i7) != 3610) continue;
+      if (o8 != BC_GGET || bc_a(i8) != 14 || bc_d(i8) != 25) continue;
+
+      tolua_repack_remap_reg_range(&i6, o6, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i5, o5, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      tolua_repack_remap_reg_range(&i4, o4, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i2, o2, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      tolua_repack_remap_reg_range(&i1, o1, 15, 20, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 22, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto297 xixing second C7 fix A15..A20 -> A16..A21");
+    }
+  }
+
   /* proto241 two-arg direct call window observed after conversion:
        GGET A15; TGETS A15 B=15 C=67 D=3907;
        TGETS A16 B=1 C=24; TGETS A16 B=16 C=31; SUBVN A16 B=16 C=10;

@@ -41,6 +41,18 @@ SOFTWARE.
 #if defined(LUAJIT_VERSION)
 #include "lj_obj.h"
 #include "lj_bc.h"
+#undef setbc_op
+#undef setbc_a
+#undef setbc_b
+#undef setbc_c
+#undef setbc_d
+#undef setbc_j
+#define setbc_op(p, x) (*(p) = (BCIns)((*(p) & ~(BCIns)0x000000ffu) | ((BCIns)(x) & (BCIns)0x000000ffu)))
+#define setbc_a(p, x)  (*(p) = (BCIns)((*(p) & ~(BCIns)0x0000ff00u) | (((BCIns)(x) & (BCIns)0x000000ffu) << 8)))
+#define setbc_c(p, x)  (*(p) = (BCIns)((*(p) & ~(BCIns)0x00ff0000u) | (((BCIns)(x) & (BCIns)0x000000ffu) << 16)))
+#define setbc_b(p, x)  (*(p) = (BCIns)((*(p) & ~(BCIns)0xff000000u) | (((BCIns)(x) & (BCIns)0x000000ffu) << 24)))
+#define setbc_d(p, x)  (*(p) = (BCIns)((*(p) & ~(BCIns)0xffff0000u) | (((BCIns)(x) & (BCIns)0x0000ffffu) << 16)))
+#define setbc_j(p, x)  setbc_d((p), (BCPos)((int32_t)(x)+BCBIAS_J))
 #endif
 
 #ifdef _WIN32

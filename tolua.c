@@ -58,7 +58,7 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260506-battle-dodirectdamage-log-min";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260506-buff-aliasfix";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -90,6 +90,125 @@ static void tolua_emitlog(const char *fmt, ...)
 	tolua_emitlogv(fmt, argp);
 	va_end(argp);
 }
+
+static uint64_t tolua_fnv1a64(const void *data, size_t len)
+{
+	const unsigned char *p = (const unsigned char *)data;
+	uint64_t h = 14695981039346656037ULL;
+	size_t i = 0;
+	for (i = 0; i < len; ++i) {
+		h ^= (uint64_t)p[i];
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+#if defined(LUAJIT_VERSION)
+#define TOLUA_BCNAME(name, ma, mb, mc, mt) #name,
+static const char *const tolua_bc_names[] = { BCDEF(TOLUA_BCNAME) };
+#undef TOLUA_BCNAME
+
+static int tolua_read_uleb128_local(const uint8_t *buf, size_t len, size_t *pos, uint32_t *out)
+{
+	uint32_t v = 0;
+	unsigned int shift = 0;
+	size_t p = *pos;
+	while (p < len && shift <= 28) {
+		uint8_t b = buf[p++];
+		v |= (uint32_t)(b & 0x7f) << shift;
+		if ((b & 0x80) == 0) {
+			*pos = p;
+			*out = v;
+			return 1;
+		}
+		shift += 7;
+	}
+	return 0;
+}
+
+static uint32_t tolua_read_ins_local(const uint8_t *buf, int be)
+{
+	if (be) {
+		return ((uint32_t)buf[0] << 24) |
+		       ((uint32_t)buf[1] << 16) |
+		       ((uint32_t)buf[2] << 8) |
+		       (uint32_t)buf[3];
+	}
+	return ((uint32_t)buf[0]) |
+	       ((uint32_t)buf[1] << 8) |
+	       ((uint32_t)buf[2] << 16) |
+	       ((uint32_t)buf[3] << 24);
+}
+
+static void tolua_emit_buff_proto0_window(const char *name, const char *patched, size_t patched_sz)
+{
+	const uint8_t *buf = (const uint8_t *)patched;
+	size_t pos = 4;
+	size_t p = 0;
+	size_t proto_end = 0;
+	size_t bc_pos = 0;
+	uint32_t flags = 0, name_len = 0, proto_len = 0;
+	uint32_t numkgc = 0, numkn = 0, numbc = 0;
+	uint32_t sizedbg = 0, firstline = 0, numline = 0;
+	int be = 0, strip = 0;
+	char detail[896];
+	size_t off = 0;
+	uint32_t pc = 0;
+
+	if (name == NULL || strstr(name, "buff.lua") == NULL || buf == NULL || patched_sz < 5) return;
+	if (!tolua_read_uleb128_local(buf, patched_sz, &pos, &flags)) return;
+	be = (flags & 0x01) ? 1 : 0;
+	strip = (flags & 0x02) ? 1 : 0;
+	if (!strip) {
+		if (!tolua_read_uleb128_local(buf, patched_sz, &pos, &name_len)) return;
+		if ((size_t)name_len > patched_sz - pos) return;
+		pos += (size_t)name_len;
+	}
+	if (!tolua_read_uleb128_local(buf, patched_sz, &pos, &proto_len) || proto_len == 0) return;
+	if ((size_t)proto_len > patched_sz - pos) return;
+	p = pos;
+	proto_end = pos + (size_t)proto_len;
+	if (p + 4 > proto_end) return;
+	p += 4;
+	if (!tolua_read_uleb128_local(buf, proto_end, &p, &numkgc) ||
+	    !tolua_read_uleb128_local(buf, proto_end, &p, &numkn) ||
+	    !tolua_read_uleb128_local(buf, proto_end, &p, &numbc)) return;
+	(void)numkgc;
+	(void)numkn;
+	if (!strip) {
+		if (!tolua_read_uleb128_local(buf, proto_end, &p, &sizedbg)) return;
+		if (sizedbg) {
+			if (!tolua_read_uleb128_local(buf, proto_end, &p, &firstline) ||
+			    !tolua_read_uleb128_local(buf, proto_end, &p, &numline)) return;
+		}
+	}
+	bc_pos = p;
+	if (numbc <= 82u || bc_pos + (size_t)numbc * 4 > proto_end) return;
+
+	off = (size_t)snprintf(detail, sizeof(detail), "[tolua-bytecode] buff_proto0_pc72_82 name=%s", name);
+	if (off >= sizeof(detail)) off = sizeof(detail) - 1;
+	for (pc = 72; pc <= 82u && off + 1 < sizeof(detail); pc++) {
+		uint32_t ins = tolua_read_ins_local(buf + bc_pos + (size_t)pc * 4, be);
+		BCOp op = bc_op((BCIns)ins);
+		const char *opname = (op < BC__MAX) ? tolua_bc_names[op] : "UNKNOWN";
+		int wrote = snprintf(detail + off, sizeof(detail) - off,
+		                     " %u:%s/A%u/B%u/C%u/D%u",
+		                     (unsigned int)pc, opname,
+		                     (unsigned int)bc_a((BCIns)ins),
+		                     (unsigned int)bc_b((BCIns)ins),
+		                     (unsigned int)bc_c((BCIns)ins),
+		                     (unsigned int)bc_d((BCIns)ins));
+		if (wrote < 0) break;
+		if ((size_t)wrote >= sizeof(detail) - off) {
+			off = sizeof(detail) - 1;
+			break;
+		}
+		off += (size_t)wrote;
+	}
+	detail[sizeof(detail) - 1] = '\0';
+	tolua_emitlog("%s", detail);
+}
+#endif
 
 LUALIB_API int tolua_isgc64enabled(void)
 {
@@ -344,17 +463,25 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
       const char *orig_error = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
       int trace_chunk = (name != NULL) &&
                         (strstr(name, "battle.lua") != NULL ||
+                         strstr(name, "buff.lua") != NULL ||
                          strstr(name, "main.lua") != NULL ||
                          strstr(name, "migong.lua") != NULL);
+      uint64_t src_hash = trace_chunk ? tolua_fnv1a64(buff, (size_t)sz) : 0;
       char *patched = NULL;
       patched = tolua_convertbytecodeex(buff, sz, target_fr2, &patched_sz, &conv_status);
       if (patched != NULL) {
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
         if (trace_chunk) {
-          tolua_emitlog("[tolua-bytecode] %s_ok name=%s src=%d out=%d",
+          uint64_t out_hash = tolua_fnv1a64(patched, (size_t)patched_sz);
+          tolua_emitlog("[tolua-bytecode] %s_ok name=%s src=%d out=%d src_fnv=%016llx out_fnv=%016llx",
                         target_fr2 ? "conv" : "map",
-                        name != NULL ? name : "<null>", sz, patched_sz);
+                        name != NULL ? name : "<null>", sz, patched_sz,
+                        (unsigned long long)src_hash,
+                        (unsigned long long)out_hash);
+#if defined(LUAJIT_VERSION)
+          tolua_emit_buff_proto0_window(name, patched, (size_t)patched_sz);
+#endif
         }
         free(patched);
       } else {

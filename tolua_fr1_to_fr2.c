@@ -5803,6 +5803,93 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
                        "apply proto132 BeforeRoleAction HasBuff self fix A16/A17 -> A17/A18");
     }
 
+    /* proto132 BATTLE_BeforeRoleAction bf.Log long concat window observed
+       after conversion:
+         MOV A10 <- A0; TGETS A9 B=0 D=57; ...; CAT A11..A15; CALL A9 B1 C3
+       Native GC64 keeps A10 as the FR2 hole after the function slot, so the
+       method self and the full string-build chain must move from A10..A15 to
+       A11..A16 while leaving the function slot and CALL shape intact. */
+    for (p = 9; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      uint32_t func_writer_pc = UINT32_MAX;
+      uint32_t self_writer_pc = UINT32_MAX;
+      BCOp cop = bc_op(c), o1 = bc_op(i1), func_writer_op = BC__MAX, self_writer_op = BC__MAX;
+      BCIns func_writer_ins = 0, self_writer_ins = 0;
+      uint32_t scan = 0;
+
+      if (cop != BC_CALL || bc_a(c) != 9 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 11 || bc_b(i1) != 11 || bc_c(i1) != 15 || bc_d(i1) != 2831) continue;
+      if (!tolua_find_nearest_reg_writer(buf, bc_pos, be, p, 9,
+                                         &func_writer_pc, &func_writer_op, &func_writer_ins)) continue;
+      if (!tolua_find_nearest_reg_writer(buf, bc_pos, be, p, 10,
+                                         &self_writer_pc, &self_writer_op, &self_writer_ins)) continue;
+      if (func_writer_op != BC_TGETS || bc_b(func_writer_ins) != 0 || bc_c(func_writer_ins) != 57 || bc_d(func_writer_ins) != 57) continue;
+      if (self_writer_op != BC_MOV || bc_d(self_writer_ins) != 0) continue;
+      if (self_writer_pc + 1 != func_writer_pc || func_writer_pc + 8 < p) continue;
+
+      for (scan = self_writer_pc; scan < p; scan++) {
+        BCIns cur = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+        BCOp cur_op = bc_op(cur);
+        tolua_repack_remap_reg_range(&cur, cur_op, 10, 15, 11);
+        tolua_write_ins(buf + bc_pos + (size_t)scan * 4, (uint32_t)cur, be);
+      }
+
+      status = tolua_update_framesize_checked(framesize_io, 16, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto132 BeforeRoleAction bf.Log long self fix A10..A15 -> A11..A16");
+    }
+
+    /* proto132 BATTLE_BeforeRoleAction bf.Log short concat windows observed
+       after conversion:
+         MOV A8 <- A0; TGETS A7 B=0 D=57; ...; CAT A9..A10/11; CALL A7 B1 C3
+       Native GC64 keeps A8 as the FR2 hole after the function slot, so the
+       method self and the full string-build chain must move from A8..A10/11
+       to A9..A11/12 while leaving the function slot and CALL shape intact. */
+    for (p = 7; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      uint32_t func_writer_pc = UINT32_MAX;
+      uint32_t self_writer_pc = UINT32_MAX;
+      BCOp cop = bc_op(c), o1 = bc_op(i1), func_writer_op = BC__MAX, self_writer_op = BC__MAX;
+      BCIns func_writer_ins = 0, self_writer_ins = 0;
+      BCReg old_last_reg = 0;
+      uint32_t scan = 0;
+
+      if (cop != BC_CALL || bc_a(c) != 7 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 9 || bc_b(i1) != 9 || bc_c(i1) < 10 || bc_c(i1) > 11) continue;
+      if (!tolua_find_nearest_reg_writer(buf, bc_pos, be, p, 7,
+                                         &func_writer_pc, &func_writer_op, &func_writer_ins)) continue;
+      if (!tolua_find_nearest_reg_writer(buf, bc_pos, be, p, 8,
+                                         &self_writer_pc, &self_writer_op, &self_writer_ins)) continue;
+      if (func_writer_op != BC_TGETS || bc_b(func_writer_ins) != 0 || bc_c(func_writer_ins) != 57 || bc_d(func_writer_ins) != 57) continue;
+      if (self_writer_op != BC_MOV || bc_d(self_writer_ins) != 0) continue;
+      if (self_writer_pc + 1 != func_writer_pc || func_writer_pc + 6 < p) continue;
+
+      old_last_reg = bc_c(i1);
+      for (scan = self_writer_pc; scan < p; scan++) {
+        BCIns cur = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)scan * 4, be);
+        BCOp cur_op = bc_op(cur);
+        tolua_repack_remap_reg_range(&cur, cur_op, 8, old_last_reg, 9);
+        tolua_write_ins(buf + bc_pos + (size_t)scan * 4, (uint32_t)cur, be);
+      }
+
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(old_last_reg + 1), ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto132 BeforeRoleAction bf.Log short self fix A8..A%u -> A9..A%u",
+                       (unsigned int)old_last_reg, (unsigned int)(old_last_reg + 1));
+    }
+
   }
 
   /* proto179 Rest bf.Log method window observed on the current FR1 battle

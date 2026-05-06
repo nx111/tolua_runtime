@@ -825,13 +825,15 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 655 664 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 655 664 > '$disWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1177 1186 >> '$disWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1203 1210 >> '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 655..664 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 655..664 or 1177..1186 or 1203..1210 failed exit=$code")
         }
     }
 
@@ -860,7 +862,15 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
         @{ pc = 661; op = "MOV";   a = 11; b = 0; c = 9;  d = 9;    tag = "pc661" },
         @{ pc = 662; op = "MOV";   a = 10; b = 0; c = 8;  d = 8;    tag = "pc662" },
         @{ pc = 663; op = "MOV";   a = 8;  b = 0; c = 7;  d = 7;    tag = "pc663" },
-        @{ pc = 664; op = "CALL";  a = 8;  b = 1; c = 3;  d = 259;  tag = "pc664" }
+        @{ pc = 664; op = "CALL";  a = 8;  b = 1; c = 3;  d = 259;  tag = "pc664" },
+        @{ pc = 1177; op = "MOV";   a = 11; b = 0; c = 0;  d = 0;    tag = "pc1177" },
+        @{ pc = 1178; op = "TGETS"; a = 9;  b = 0; c = 57; d = 57;   tag = "pc1178" },
+        @{ pc = 1185; op = "CAT";   a = 12; b = 12; c = 16; d = 3088; tag = "pc1185" },
+        @{ pc = 1186; op = "CALL";  a = 9;  b = 1; c = 3;  d = 259;  tag = "pc1186" },
+        @{ pc = 1203; op = "MOV";   a = 9;  b = 0; c = 0;  d = 0;    tag = "pc1203" },
+        @{ pc = 1204; op = "TGETS"; a = 7;  b = 0; c = 57; d = 57;   tag = "pc1204" },
+        @{ pc = 1209; op = "CAT";   a = 10; b = 10; c = 12; d = 2572; tag = "pc1209" },
+        @{ pc = 1210; op = "CALL";  a = 7;  b = 1; c = 3;  d = 259;  tag = "pc1210" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]

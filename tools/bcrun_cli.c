@@ -2226,18 +2226,29 @@ static int run_attacklogic_extendtalents2_chaizhaolog_harness(lua_State *L)
 
 static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode, int remove_mode, int xilog_mode)
 {
-  const char *setup =
-      xilog_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = true"
-                 : (remove_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = true\n__XILOG_EXPECT__ = false"
-                                : (xixing_mode ? "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false"
-                                               : (misslog_mode ? "__MISSLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false"
-                                                               : "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false")));
-  const char *chunk_name =
-      xilog_mode ? "@bcrun_attacklogic_extendtalents2_xilog_setup"
-                 : (remove_mode ? "@bcrun_attacklogic_extendtalents2_removeprobe_setup"
-                                : (xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixing_setup"
-                                               : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog_setup"
-                                                               : "@bcrun_attacklogic_extendtalents2_fullprobe_setup")));
+  const char *setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false";
+  const char *chunk_name = "@bcrun_attacklogic_extendtalents2_fullprobe_setup";
+  const char *run_chunk = "@bcrun_attacklogic_extendtalents2_fullprobe";
+  if (misslog_mode) {
+    setup = "__MISSLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false";
+    chunk_name = "@bcrun_attacklogic_extendtalents2_misslog_setup";
+    run_chunk = "@bcrun_attacklogic_extendtalents2_misslog";
+  }
+  if (xixing_mode) {
+    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false";
+    chunk_name = "@bcrun_attacklogic_extendtalents2_xixing_setup";
+    run_chunk = "@bcrun_attacklogic_extendtalents2_xixingcallback";
+  }
+  if (remove_mode) {
+    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = true\n__XILOG_EXPECT__ = false";
+    chunk_name = "@bcrun_attacklogic_extendtalents2_removeprobe_setup";
+    run_chunk = "@bcrun_attacklogic_extendtalents2_removeprobe";
+  }
+  if (xilog_mode) {
+    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = true";
+    chunk_name = "@bcrun_attacklogic_extendtalents2_xilog_setup";
+    run_chunk = "@bcrun_attacklogic_extendtalents2_xilog";
+  }
   const char *harness =
       "local function list(items)\n"
       "  local t = { Count = #items, Length = #items, __items = items, __create_lua_table_ok = true }\n"
@@ -2658,12 +2669,7 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "end\n";
 
   if (dostring(L, setup, chunk_name)) return 1;
-  return dostring(L, harness,
-                  xilog_mode ? "@bcrun_attacklogic_extendtalents2_xilog"
-                             : (remove_mode ? "@bcrun_attacklogic_extendtalents2_removeprobe"
-                                            : (xixing_mode ? "@bcrun_attacklogic_extendtalents2_xixingcallback"
-                                                           : (misslog_mode ? "@bcrun_attacklogic_extendtalents2_misslog"
-                                                                           : "@bcrun_attacklogic_extendtalents2_fullprobe"))));
+  return dostring(L, harness, run_chunk);
 }
 
 static int run_attacklogic_extendtalents2_fullprobe_harness(lua_State *L)
@@ -2684,6 +2690,122 @@ static int run_attacklogic_extendtalents2_removeprobe_harness(lua_State *L)
 static int run_attacklogic_extendtalents2_xilog_harness(lua_State *L)
 {
   return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 1);
+}
+
+static int run_attacklogic_extendtalents2_xiaoyaolog_harness(lua_State *L)
+{
+  const char *harness =
+      "local function strictify(label, t)\n"
+      "  return setmetatable(t, {\n"
+      "    __index = function(_, k)\n"
+      "      error(label .. ' missing key=' .. tostring(k), 0)\n"
+      "    end\n"
+      "  })\n"
+      "end\n"
+      "local function false_map(seed)\n"
+      "  return setmetatable(seed or {}, { __index = function() return false end })\n"
+      "end\n"
+      "local function make_role(name, key)\n"
+      "  return strictify('role', {\n"
+      "    Name = name,\n"
+      "    Key = key,\n"
+      "    Level = 10,\n"
+      "    level = 10,\n"
+      "    Attributes = { female = 0 },\n"
+      "    AttributesFinal = {},\n"
+      "    Talents = {},\n"
+      "    EquipmentTalents = {},\n"
+      "    InternalSkills = {},\n"
+      "    Skills = {},\n"
+      "    SpecialSkills = {},\n"
+      "    EquippedInternalSkill = { Name = '北冥神功', Level = 10 },\n"
+      "    HiddenWeapon = '',\n"
+      "    EquippedTitle = ''\n"
+      "  })\n"
+      "end\n"
+      "local function make_sprite(role, team)\n"
+      "  local sprite = {\n"
+      "    ParentBattleField = nil,\n"
+      "    Role = role,\n"
+      "    role = role,\n"
+      "    Team = team,\n"
+      "    Name = role.Name,\n"
+      "    X = 3,\n"
+      "    Y = team,\n"
+      "    Hp = 100,\n"
+      "    MaxHp = 100,\n"
+      "    Mp = 50,\n"
+      "    MaxMp = 50,\n"
+      "    Sp = 20\n"
+      "  }\n"
+      "  function sprite:HasBuff(name)\n"
+      "    assert(self == sprite, 'HasBuff self=' .. tostring(self))\n"
+      "    return false\n"
+      "  end\n"
+      "  function sprite:GetBuff(name)\n"
+      "    assert(self == sprite, 'GetBuff self=' .. tostring(self))\n"
+      "    return nil\n"
+      "  end\n"
+      "  return strictify('sprite', sprite)\n"
+      "end\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "RuntimeData.Instance.gameEngine = { CurrentSceneValue = '', battleType = '' }\n"
+      "RuntimeData.Instance.GameMode = ''\n"
+      "RuntimeData.Instance.Round = 1\n"
+      "RuntimeData.Instance.isAttackAnalog = false\n"
+      "Tools.ProbabilityTest = function() return true end\n"
+      "local skill = { Name = 'offline-skill', name = 'offline-skill', Type = 1, Skill = {}, SkillType = { GetHashCode = function() return 1 end } }\n"
+      "local bf = { BattleTimestamp = 1, SpritesTable = {} }\n"
+      "function bf:Log(msg)\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "  error('__XIAOYAO_OK__')\n"
+      "end\n"
+      "local sourceRole = make_role('src-role', 'src-key')\n"
+      "local targetRole = make_role('dst-role', 'dst-key')\n"
+      "local sourceSprite = make_sprite(sourceRole, 1)\n"
+      "local targetSprite = make_sprite(targetRole, 2)\n"
+      "sourceSprite.ParentBattleField = bf\n"
+      "targetSprite.ParentBattleField = bf\n"
+      "sourceRole.Sprite = sourceSprite\n"
+      "targetRole.Sprite = targetSprite\n"
+      "bf.SpritesTable = { sourceSprite, targetSprite }\n"
+      "local result = strictify('result', {\n"
+      "  Hp = 60,\n"
+      "  Mp = 20,\n"
+      "  costBall = 0,\n"
+      "  Critical = false,\n"
+      "  Debuff = { Clear = function() end },\n"
+      "  Buff = { Clear = function() end },\n"
+      "  castInfo = { Clear = function() end },\n"
+      "  AddCastInfo = function() end,\n"
+      "  AddAttackInfo = function() end\n"
+      "})\n"
+      "local prevRoleAtk = strictify('prevRoleAtk', {\n"
+      "  talents = false_map(),\n"
+      "  roleTalents = false_map(),\n"
+      "  role = sourceRole,\n"
+      "  Miss = 0\n"
+      "})\n"
+      "local xiaoyaoTalents = false_map({ ['逍遥之基'] = true })\n"
+      "local prevRoleDef = strictify('prevRoleDef', {\n"
+      "  talents = xiaoyaoTalents,\n"
+      "  roleTalents = xiaoyaoTalents,\n"
+      "  role = targetRole,\n"
+      "  InternalSkillName = '北冥神功',\n"
+      "  Miss = 0\n"
+      "})\n"
+      "local wf = BattleUtil.GetWorkflowForTalent('extendTalents2_forDefencer')\n"
+      "assert(type(wf) == 'table', 'wf=' .. type(wf))\n"
+      "local candidate = wf.callbacks and wf.callbacks['逍遥之基'] or nil\n"
+      "assert(type(candidate) == 'function', 'candidate=' .. type(candidate))\n"
+      "local ok, err = xpcall(function()\n"
+      "  return candidate(sourceSprite, targetSprite, skill, bf, result, prevRoleAtk, prevRoleDef)\n"
+      "end, debug.traceback)\n"
+      "assert(ok == false, 'callback returned before xiaoyao log')\n"
+      "assert(string.find(tostring(err), '__XIAOYAO_OK__', 1, true) ~= nil, 'err=' .. tostring(err))\n";
+
+  return dostring(L, harness, "@bcrun_attacklogic_extendtalents2_xiaoyaolog");
 }
 
 static int run_attacklogic_extendtalents2_yihualog_harness(lua_State *L)
@@ -2932,7 +3054,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xiaoyaolog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -2993,6 +3115,7 @@ int main(int argc, char **argv)
        strcmp(mode, "attacklogic_extendtalents2_fullprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_removeprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_xilog") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents2_xiaoyaolog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_xixingcallback") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_yihualog") == 0)) {
     if (strcmp(mode, "getrrevrole") == 0) {
@@ -3045,6 +3168,8 @@ int main(int argc, char **argv)
       status = run_attacklogic_extendtalents2_removeprobe_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_xilog") == 0) {
       status = run_attacklogic_extendtalents2_xilog_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents2_xiaoyaolog") == 0) {
+      status = run_attacklogic_extendtalents2_xiaoyaolog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_xixingcallback") == 0) {
       status = run_attacklogic_extendtalents2_xixingcallback_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_yihualog") == 0) {

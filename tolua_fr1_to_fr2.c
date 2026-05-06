@@ -5803,6 +5803,43 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
                        "apply proto132 BeforeRoleAction HasBuff self fix A16/A17 -> A17/A18");
     }
 
+    /* proto132 BATTLE_BeforeRoleAction DeleteBuff(name) window observed
+       after conversion:
+         MOV A18 <- A1; TGETS A17 B=1 D=307; MOV A19 <- A14; CALL A17 B1 C3
+       FR2 keeps A18 as the function-slot hole, so method self/arg must move
+       from A18/A19 to A19/A20. */
+    for (p = 5; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5);
+
+      if (cop != BC_CALL || bc_a(c) != 17 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 19 || bc_d(i1) != 14) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 17 || bc_b(i2) != 1 || bc_c(i2) != 51 || bc_d(i2) != 307) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 18 || bc_d(i3) != 1) continue;
+      if (o4 != BC_JMP || bc_a(i4) != 17 || bc_b(i4) != 128 || bc_c(i4) != 4 || bc_d(i4) != 32772) continue;
+      if (o5 != BC_ISNEN || bc_a(i5) != 17 || bc_c(i5) != 19 || bc_d(i5) != 19) continue;
+
+      setbc_a(&i3, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i1, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 20, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto132 BeforeRoleAction DeleteBuff self fix A18/A19 -> A19/A20");
+    }
+
     /* proto132 BATTLE_BeforeRoleAction bf.Log long concat window observed
        after conversion:
          MOV A10 <- A0; TGETS A9 B=0 D=57; ...; CAT A11..A15; CALL A9 B1 C3

@@ -233,6 +233,79 @@ function Test-HostToolsReady([string]$repoRootWsl) {
     return (Invoke-WslBash $probeCmd) -eq 0
 }
 
+function Test-TriggerLogicRefreshGetItemsSetActiveHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' triggerlogic_refreshgetitems_setactive > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
+function Test-TriggerLogicRefreshGetItemsSetActiveShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 3 54 64 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto3 54..64 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 54; op = "TGETS"; a = 10; b = 7;  c = 13; d = 1805; tag = "pc054" },
+        @{ pc = 55; op = "MOV";   a = 12; b = 0;  c = 10; d = 10;   tag = "pc055" },
+        @{ pc = 56; op = "TGETS"; a = 10; b = 10; c = 19; d = 2579; tag = "pc056" },
+        @{ pc = 57; op = "KPRI";  a = 13; b = 0;  c = 1;  d = 1;    tag = "pc057" },
+        @{ pc = 58; op = "CALL";  a = 10; b = 1;  c = 3;  d = 259;  tag = "pc058" },
+        @{ pc = 60; op = "TGETS"; a = 10; b = 7;  c = 13; d = 1805; tag = "pc060" },
+        @{ pc = 61; op = "MOV";   a = 12; b = 0;  c = 10; d = 10;   tag = "pc061" },
+        @{ pc = 62; op = "TGETS"; a = 10; b = 10; c = 19; d = 2579; tag = "pc062" },
+        @{ pc = 63; op = "KPRI";  a = 13; b = 0;  c = 2;  d = 2;    tag = "pc063" },
+        @{ pc = 64; op = "CALL";  a = 10; b = 1;  c = 3;  d = 259;  tag = "pc064" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-BattleRegisterPrevRoleHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -3556,6 +3629,67 @@ if (Test-Path $buffPath) {
         beforeroleaction_fail = 0
         beforeskillanimation_fail = 0
         onroundbuff_fail    = ($buffShapeFailures + $buffHarnessFailures + $buffRecoveryHarnessFailures)
+        log_path            = $logPath
+        out_path            = $outPath
+    }
+}
+
+$triggerLogicName = "triggerlogic.lua"
+$triggerLogicPath = Join-Path $BytecodeDir $triggerLogicName
+if (Test-Path $triggerLogicPath) {
+    $outPath = Join-Path $outAbs "$triggerLogicName.fr2.bin"
+    $logPath = Join-Path $outAbs "$triggerLogicName.dbg.log"
+    $inWsl = Convert-ToWslPath $triggerLogicPath
+    $outWsl = Convert-ToWslPath $outPath
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcconv_cli_wsl_dbg '$inWsl' '$outWsl' 1 > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    $converted = Get-LogCount $logPath "converted "
+    $convFail = Get-LogCount $logPath "bytecode conversion failed"
+    $copyFallback = Get-LogCount $logPath "copy-fallback"
+
+    $triggerLogicDis = Join-Path $outAbs "triggerlogic.proto3.refresh_get_items_setactive.dis.txt"
+    $triggerLogicShapeCheck = Test-TriggerLogicRefreshGetItemsSetActiveShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $triggerLogicDis
+    $triggerLogicShapeFailures = @($triggerLogicShapeCheck.failures).Count
+    if (-not $triggerLogicShapeCheck.ok) {
+        $failed = $true
+        foreach ($msg in $triggerLogicShapeCheck.failures) {
+            Write-Warning "[triggerlogic refresh_get_items shape] $msg"
+        }
+    }
+
+    $triggerLogicHarnessLog = Join-Path $outAbs "triggerlogic.refresh_get_items_setactive.log"
+    $triggerLogicHarnessCheck = Test-TriggerLogicRefreshGetItemsSetActiveHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $triggerLogicHarnessLog
+    $triggerLogicHarnessFailures = if ($triggerLogicHarnessCheck.ok) { 0 } else { 1 }
+    if (-not $triggerLogicHarnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[triggerlogic refresh_get_items harness] failed exit=$($triggerLogicHarnessCheck.exit_code): $triggerLogicHarnessLog"
+    }
+
+    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0) {
+        $failed = $true
+    }
+
+    $summary += [pscustomobject]@{
+        file                = $triggerLogicName
+        exit_code           = $code
+        converted_lines     = $converted
+        conversion_failed   = $convFail
+        register_overflow   = 0
+        kstr_tdup_rejects   = 0
+        table_style_guards  = 0
+        copy_fallback_hits  = $copyFallback
+        workflow_shift_hits = 0
+        workflow_shift_fail = 0
+        doalltrigger_fail   = 0
+        registerprevrole_fail = 0
+        rest_fail           = 0
+        beforeroleaction_fail = 0
+        beforeskillanimation_fail = 0
+        triggerlogic_fail   = ($triggerLogicShapeFailures + $triggerLogicHarnessFailures)
         log_path            = $logPath
         out_path            = $outPath
     }

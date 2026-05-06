@@ -171,6 +171,51 @@ static int run_checktrigger_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_checktrigger");
 }
 
+static int run_triggerlogic_refreshgetitems_setactive_harness(lua_State *L)
+{
+  const char *harness =
+      "RuntimeData = RuntimeData or {}\n"
+      "RuntimeData.Instance = RuntimeData.Instance or {}\n"
+      "EquipUtil = EquipUtil or {}\n"
+      "EquipUtil.HasUnfinishedItems = false\n"
+      "local calls = {}\n"
+      "local function make_child(name)\n"
+      "  local component = { LocationName = name }\n"
+      "  local go = { __name = name }\n"
+      "  function go:GetComponent(tag)\n"
+      "    assert(self == go, '__TRIGGER_GETCOMP_SELF__ name=' .. tostring(name) .. ' self=' .. tostring(self))\n"
+      "    if tag == 'MapLocationUI' then return component end\n"
+      "    return nil\n"
+      "  end\n"
+      "  function go:SetActive(flag)\n"
+      "    assert(self == go, '__TRIGGER_SETACTIVE_SELF__ name=' .. tostring(name) .. ' self=' .. type(self) .. ':' .. tostring(self) .. ' flag=' .. type(flag) .. ':' .. tostring(flag))\n"
+      "    assert(type(flag) == 'boolean', '__TRIGGER_SETACTIVE_FLAG__ name=' .. tostring(name) .. ' flag=' .. type(flag) .. ':' .. tostring(flag))\n"
+      "    calls[#calls + 1] = tostring(name) .. '=' .. tostring(flag)\n"
+      "  end\n"
+      "  return { gameObject = go }\n"
+      "end\n"
+      "local children = { make_child('隐藏'), make_child('公开'), make_child('') }\n"
+      "local container = { childCount = #children }\n"
+      "function container:GetChild(i)\n"
+      "  assert(self == container, '__TRIGGER_GETCHILD_SELF__ self=' .. tostring(self))\n"
+      "  return children[i + 1]\n"
+      "end\n"
+      "local root = {}\n"
+      "function root:FindChild(name)\n"
+      "  assert(self == root, '__TRIGGER_FINDCHILD_SELF__ self=' .. tostring(self))\n"
+      "  assert(name == 'MapLocationContainer', 'FindChild name=' .. tostring(name))\n"
+      "  return container\n"
+      "end\n"
+      "RuntimeData.Instance.CurrentBigMap = '离线大地图'\n"
+      "RuntimeData.Instance.mapUI = { BigMap = { transform = root } }\n"
+      "local ret = TriggerLogic_judge({ type = 'REFRESH_GET_ITEMS' })\n"
+      "assert(ret == false, 'ret=' .. tostring(ret))\n"
+      "assert(#calls == 2, 'calls=' .. table.concat(calls, ','))\n"
+      "assert(calls[1] == '隐藏=false', 'call1=' .. tostring(calls[1]))\n"
+      "assert(calls[2] == '公开=true', 'call2=' .. tostring(calls[2]))\n";
+  return dostring(L, harness, "@bcrun_triggerlogic_refreshgetitems_setactive");
+}
+
 static int run_buff_onroundbuff_maxcall_harness(lua_State *L)
 {
   const char *harness =
@@ -2872,7 +2917,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -2909,6 +2954,7 @@ int main(int argc, char **argv)
       (strcmp(mode, "getrrevrole") == 0 ||
        strcmp(mode, "registerprevrole") == 0 ||
        strcmp(mode, "checktrigger") == 0 ||
+       strcmp(mode, "triggerlogic_refreshgetitems_setactive") == 0 ||
        strcmp(mode, "buff_onroundbuff_maxcall") == 0 ||
        strcmp(mode, "buff_onroundbuff_recoverymin") == 0 ||
        strcmp(mode, "installyinjian") == 0 ||
@@ -2938,6 +2984,8 @@ int main(int argc, char **argv)
       status = run_getrrevrole_harness(L);
     } else if (strcmp(mode, "registerprevrole") == 0) {
       status = run_registerprevrole_trigger_harness(L);
+    } else if (strcmp(mode, "triggerlogic_refreshgetitems_setactive") == 0) {
+      status = run_triggerlogic_refreshgetitems_setactive_harness(L);
     } else if (strcmp(mode, "buff_onroundbuff_maxcall") == 0) {
       status = run_buff_onroundbuff_maxcall_harness(L);
     } else if (strcmp(mode, "buff_onroundbuff_recoverymin") == 0) {

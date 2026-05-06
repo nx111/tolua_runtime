@@ -2696,6 +2696,40 @@ static int tolua_existing_fr2_call_args_are_aligned(const uint8_t *buf, size_t b
       return 0;
     }
     if (have_old_next &&
+        old_last == (BCReg)(old_first + 1) &&
+        old_writer_op == BC_MOV &&
+        old_next_writer_pc == new_writer_pc &&
+        old_next_writer_pc != old_writer_pc &&
+        old_next_writer_pc <= old_writer_pc + 4 &&
+        old_next_writer_op == new_writer_op &&
+        old_next_writer_op == BC_KPRI &&
+        old_writer_pc + 8 >= pc &&
+        old_next_writer_pc + 8 >= pc) {
+      BCReg func_reg = old_reg > 0 ? (BCReg)(old_reg - 1) : 0;
+      uint32_t func_writer_pc = UINT32_MAX;
+      BCOp func_writer_op = BC__MAX;
+      BCIns func_writer_ins = 0;
+      int have_func_writer = 0;
+
+      if (old_reg > 0) {
+        have_func_writer = tolua_find_nearest_reg_writer(buf, bc_pos, be, pc, func_reg,
+                                                         &func_writer_pc, &func_writer_op, &func_writer_ins);
+      }
+      if (have_func_writer &&
+          func_writer_op == BC_TGETS &&
+          bc_d(func_writer_ins) == 2579 &&
+          bc_b(func_writer_ins) == bc_d(old_writer_ins) &&
+          func_writer_pc + 8 >= pc) {
+        TOLUA_REPACK_LOG(ctx, pc,
+                         "reject existing FR2 slice: method-self const arg new-first matches old-second old=%u(pc=%u,%s src=%u) old2=%u(pc=%u,%s) new=%u(pc=%u,%s)",
+                         (unsigned int)old_reg, (unsigned int)old_writer_pc, tolua_bc_opname(old_writer_op),
+                         (unsigned int)bc_d(old_writer_ins),
+                         (unsigned int)(old_reg + 1), (unsigned int)old_next_writer_pc, tolua_bc_opname(old_next_writer_op),
+                         (unsigned int)new_reg, (unsigned int)new_writer_pc, tolua_bc_opname(new_writer_op));
+        return 0;
+      }
+    }
+    if (have_old_next &&
         old_last >= (BCReg)(old_first + 2) &&
         old_writer_op == BC_MOV &&
         old_next_writer_op == BC_MOV &&

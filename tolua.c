@@ -91,6 +91,17 @@ static void tolua_emitlog(const char *fmt, ...)
 	va_end(argp);
 }
 
+#if defined(LUAJIT_VERSION)
+static int tolua_should_load_fr1_bytecode_as_fr2(void)
+{
+#if defined(LUAJIT_ENABLE_GC64)
+	return 1;
+#else
+	return LJ_FR2 ? 1 : 0;
+#endif
+}
+#endif
+
 /*---------------------------tolua extend functions--------------------------------*/
 LUALIB_API void* tolua_tag()
 {
@@ -318,7 +329,7 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
     int status = luaL_loadbuffer(L, buff, (size_t)sz, name);
 #if defined(LUAJIT_VERSION)
     if (status == LUA_ERRSYNTAX && tolua_isbytecode(buff, sz)) {
-      int target_fr2 = LJ_FR2 ? 1 : 0;
+      int target_fr2 = tolua_should_load_fr1_bytecode_as_fr2();
       int conv_status = TOLUA_BCCONV_OK;
       int patched_sz = 0;
       const char *orig_error = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
@@ -332,7 +343,8 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
         lua_pop(L, 1); /* Drop previous incompatible-bytecode error. */
         status = luaL_loadbuffer(L, patched, (size_t)patched_sz, name);
         if (trace_chunk) {
-          tolua_emitlog("[tolua-bytecode] conv_ok name=%s src=%d out=%d",
+          tolua_emitlog("[tolua-bytecode] %s_ok name=%s src=%d out=%d",
+                        target_fr2 ? "conv" : "map",
                         name != NULL ? name : "<null>", sz, patched_sz);
         }
         free(patched);
@@ -340,7 +352,8 @@ LUALIB_API int tolua_loadbuffer(lua_State *L, const char *buff, int sz, const ch
         const char *conv_detail = tolua_getlastbytecodedebug();
         const char *conv_name = tolua_getbytecodeerrorstr(conv_status);
         if (trace_chunk) {
-          tolua_emitlog("[tolua-bytecode] conv_fail name=%s err=%s detail=%s",
+          tolua_emitlog("[tolua-bytecode] %s_fail name=%s err=%s detail=%s",
+                        target_fr2 ? "conv" : "map",
                         name != NULL ? name : "<null>",
                         conv_name != NULL ? conv_name : "unknown",
                         (conv_detail != NULL && conv_detail[0] != '\0') ? conv_detail : "conversion failed");

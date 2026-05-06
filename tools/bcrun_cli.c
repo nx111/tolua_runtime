@@ -1435,6 +1435,41 @@ static int run_battle_rest_buffprobe_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_battle_rest_buffprobe");
 }
 
+static int run_battle_dodirectdamage_logprobe_harness(lua_State *L)
+{
+  const char *harness =
+      "BattleFieldMonitor = BattleFieldMonitor or {}\n"
+      "local monitor = { calls = {} }\n"
+      "function monitor:helpChangeAttribute(role, key, delta)\n"
+      "  assert(self == monitor, 'monitor.helpChangeAttribute self=' .. tostring(self))\n"
+      "  assert(key == 'maxhp', 'helpChangeAttribute key=' .. tostring(key))\n"
+      "  self.calls[#self.calls + 1] = tostring(delta)\n"
+      "end\n"
+      "BattleFieldMonitor.getInstance = function()\n"
+      "  return monitor\n"
+      "end\n"
+      "local logs = {}\n"
+      "local bf = {}\n"
+      "function bf:Log(msg)\n"
+      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
+      "  logs[#logs + 1] = msg\n"
+      "end\n"
+      "local prevRoleAtk = { attributes = {} }\n"
+      "local prevRoleDef = { role = { Name = 'offline-def-role' }, attributes = { att_status_duntohp = 50 } }\n"
+      "local targetSprite = {\n"
+      "  Shield = 5,\n"
+      "  Hp = 20,\n"
+      "  Role = { Name = 'offline-target' }\n"
+      "}\n"
+      "BattleUtil.DoDirectDamage(bf, prevRoleAtk, prevRoleDef, targetSprite, 12, false)\n"
+      "assert(targetSprite.Shield == 0, 'shield=' .. tostring(targetSprite.Shield))\n"
+      "assert(targetSprite.Hp == 15, 'hp=' .. tostring(targetSprite.Hp))\n"
+      "assert(#monitor.calls == 1 and monitor.calls[1] == '2', 'monitor.calls=' .. table.concat(monitor.calls, ','))\n"
+      "assert(#logs == 3, 'logs=' .. tostring(#logs))\n";
+  return dostring(L, harness, "@bcrun_battle_dodirectdamage_logprobe");
+}
+
 static int run_attacklogic_tempvalue_harness(lua_State *L)
 {
   const char *harness =
@@ -3114,7 +3149,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeskillanimation_shuangbingqilog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xiaoyaolog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_dodirectdamage_logprobe|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeskillanimation_shuangbingqilog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xiaoyaolog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -3154,11 +3189,12 @@ int main(int argc, char **argv)
        strcmp(mode, "triggerlogic_refreshgetitems_setactive") == 0 ||
        strcmp(mode, "buff_onroundbuff_maxcall") == 0 ||
        strcmp(mode, "buff_onroundbuff_recoverymin") == 0 ||
-       strcmp(mode, "installyinjian") == 0 ||
-       strcmp(mode, "battle_rest") == 0 ||
-       strcmp(mode, "battle_rest_buffprobe") == 0 ||
-       strcmp(mode, "battle_rest_huanhun_mincall") == 0 ||
-       strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
+        strcmp(mode, "installyinjian") == 0 ||
+        strcmp(mode, "battle_rest") == 0 ||
+        strcmp(mode, "battle_rest_buffprobe") == 0 ||
+        strcmp(mode, "battle_rest_huanhun_mincall") == 0 ||
+        strcmp(mode, "battle_dodirectdamage_logprobe") == 0 ||
+        strcmp(mode, "battle_beforeskillanimation_callback") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_wushuanglog") == 0 ||
        strcmp(mode, "battle_beforeskillanimation_shuangbingqilog") == 0 ||
        strcmp(mode, "battle_beforeroleaction_mincall") == 0 ||
@@ -3197,6 +3233,8 @@ int main(int argc, char **argv)
       status = run_battle_rest_buffprobe_harness(L);
     } else if (strcmp(mode, "battle_rest_huanhun_mincall") == 0) {
       status = run_battle_rest_huanhun_mincall_harness(L);
+    } else if (strcmp(mode, "battle_dodirectdamage_logprobe") == 0) {
+      status = run_battle_dodirectdamage_logprobe_harness(L);
     } else if (strcmp(mode, "battle_beforeskillanimation_callback") == 0) {
       status = run_battle_beforeskillanimation_callback_harness(L);
     } else if (strcmp(mode, "battle_beforeskillanimation_wushuanglog") == 0) {

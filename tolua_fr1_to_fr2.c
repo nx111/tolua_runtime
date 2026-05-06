@@ -9556,6 +9556,131 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto14 BattleUtil.DoDirectDamage has one direct math.min window and three
+     sibling bf.Log windows that still keep FR1 argument/self slots after
+     conversion:
+       line354: GGET A7; TGETS A7[19=min]; MOV A8<-A4; TGETS A9<-A3[16];
+                SUBVN A9; CALL A7 B2 C3
+       line342: MOV A10<-A0; TGETS A9<-A0[6]; ... CAT A11..A14; CALL A9
+       line349: MOV A11<-A0; TGETS A10<-A0[6]; ... CAT A12..A15; CALL A10
+       line356: MOV A9 <-A0; TGETS A8 <-A0[6]; ... CAT A10..A13; CALL A8
+     Each window needs just the arg/self/string build range shifted right by
+     one slot, leaving the function register untouched. */
+  if (ctx != NULL && ctx->proto_index == 14u) {
+    uint32_t p = 0;
+    for (p = 8; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8);
+      BCReg old_first = 0, old_last = 0, new_first = 0;
+      const char *tag = NULL;
+
+      if (cop == BC_CALL && bc_a(c) == 7 && bc_b(c) == 2 && bc_c(c) == 3 &&
+          o1 == BC_SUBVN && bc_a(i1) == 9 && bc_b(i1) == 9 && bc_c(i1) == 1 && bc_d(i1) == 2305 &&
+          o2 == BC_TGETS && bc_a(i2) == 9 && bc_b(i2) == 3 && bc_c(i2) == 16 && bc_d(i2) == 784 &&
+          o3 == BC_MOV && bc_a(i3) == 8 && bc_d(i3) == 4 &&
+          o4 == BC_TGETS && bc_a(i4) == 7 && bc_b(i4) == 7 && bc_c(i4) == 19 && bc_d(i4) == 1811 &&
+          o5 == BC_GGET && bc_a(i5) == 7 && bc_d(i5) == 4) {
+        tolua_repack_remap_reg_range(&i3, o3, 8, 9, 9);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+        tolua_repack_remap_reg_range(&i2, o2, 8, 9, 9);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+        tolua_repack_remap_reg_range(&i1, o1, 8, 9, 9);
+        tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+        status = tolua_update_framesize_checked(framesize_io, 18, ctx, p, c, cop);
+        if (status != TOLUA_BCCONV_OK) {
+          free(targets);
+          return status;
+        }
+
+        TOLUA_REPACK_LOG(ctx, p,
+                         "apply proto14 DoDirectDamage math.min fix A8..A9 -> A9..A10");
+        continue;
+      }
+
+      if (cop != BC_CALL || bc_b(c) != 1 || bc_c(c) != 3) continue;
+
+      if (bc_a(c) == 9 &&
+          o1 == BC_CAT && bc_a(i1) == 11 && bc_b(i1) == 11 && bc_c(i1) == 14 && bc_d(i1) == 2830 &&
+          o2 == BC_KSTR && bc_a(i2) == 14 && bc_d(i2) == 10 &&
+          o3 == BC_MOV && bc_a(i3) == 13 && bc_d(i3) == 8 &&
+          o4 == BC_KSTR && bc_a(i4) == 12 && bc_d(i4) == 9 &&
+          o5 == BC_TGETS && bc_a(i5) == 11 && bc_b(i5) == 11 && bc_c(i5) == 8 && bc_d(i5) == 2824 &&
+          o6 == BC_TGETS && bc_a(i6) == 11 && bc_b(i6) == 3 && bc_c(i6) == 7 && bc_d(i6) == 775 &&
+          o7 == BC_TGETS && bc_a(i7) == 9 && bc_b(i7) == 0 && bc_c(i7) == 6 && bc_d(i7) == 6 &&
+          o8 == BC_MOV && bc_a(i8) == 10 && bc_d(i8) == 0) {
+        old_first = 10;
+        old_last = 14;
+        new_first = 11;
+        tag = "shield";
+      } else if (bc_a(c) == 10 &&
+                 o1 == BC_CAT && bc_a(i1) == 12 && bc_b(i1) == 12 && bc_c(i1) == 15 && bc_d(i1) == 3087 &&
+                 o2 == BC_KSTR && bc_a(i2) == 15 && bc_d(i2) == 18 &&
+                 o3 == BC_MOV && bc_a(i3) == 14 && bc_d(i3) == 9 &&
+                 o4 == BC_KSTR && bc_a(i4) == 13 && bc_d(i4) == 17 &&
+                 o5 == BC_TGETS && bc_a(i5) == 12 && bc_b(i5) == 12 && bc_c(i5) == 8 && bc_d(i5) == 3080 &&
+                 o6 == BC_TGETS && bc_a(i6) == 12 && bc_b(i6) == 3 && bc_c(i6) == 7 && bc_d(i6) == 775 &&
+                 o7 == BC_TGETS && bc_a(i7) == 10 && bc_b(i7) == 0 && bc_c(i7) == 6 && bc_d(i7) == 6 &&
+                 o8 == BC_MOV && bc_a(i8) == 11 && bc_d(i8) == 0) {
+        old_first = 11;
+        old_last = 15;
+        new_first = 12;
+        tag = "duntohp";
+      } else if (bc_a(c) == 8 &&
+                 o1 == BC_CAT && bc_a(i1) == 10 && bc_b(i1) == 10 && bc_c(i1) == 13 && bc_d(i1) == 2573 &&
+                 o2 == BC_KSTR && bc_a(i2) == 13 && bc_d(i2) == 21 &&
+                 o3 == BC_MOV && bc_a(i3) == 12 && bc_d(i3) == 7 &&
+                 o4 == BC_KSTR && bc_a(i4) == 11 && bc_d(i4) == 20 &&
+                 o5 == BC_TGETS && bc_a(i5) == 10 && bc_b(i5) == 10 && bc_c(i5) == 8 && bc_d(i5) == 2568 &&
+                 o6 == BC_TGETS && bc_a(i6) == 10 && bc_b(i6) == 3 && bc_c(i6) == 7 && bc_d(i6) == 775 &&
+                 o7 == BC_TGETS && bc_a(i7) == 8 && bc_b(i7) == 0 && bc_c(i7) == 6 && bc_d(i7) == 6 &&
+                 o8 == BC_MOV && bc_a(i8) == 9 && bc_d(i8) == 0) {
+        old_first = 9;
+        old_last = 13;
+        new_first = 10;
+        tag = "realdmg";
+      } else {
+        continue;
+      }
+
+      tolua_repack_remap_reg_range(&i8, o8, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 8) * 4, (uint32_t)i8, be);
+      tolua_repack_remap_reg_range(&i6, o6, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i5, o5, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      tolua_repack_remap_reg_range(&i4, o4, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i2, o2, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      tolua_repack_remap_reg_range(&i1, o1, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 17, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto14 DoDirectDamage %s bf.Log fix A%u..A%u -> A%u..A%u",
+                       tag,
+                       (unsigned int)old_first, (unsigned int)old_last,
+                       (unsigned int)new_first, (unsigned int)(new_first + (old_last - old_first)));
+    }
+  }
+
   /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback two bf.Log C3
      windows observed after conversion:
        MOV A15 <- A3; TGETS A14 B=3 C=22 D=790;

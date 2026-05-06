@@ -476,6 +476,101 @@ function Test-BattleRestLogShape([string]$repoRootWsl, [string]$bytecodeWsl, [st
     }
 }
 
+function Test-BattleDoDirectDamageLogShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 14 46 110 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto14 46..110 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 46; op = "MOV";   a = 11; b = 0;  c = 0;  d = 0 },
+        @{ pc = 47; op = "TGETS"; a = 9;  b = 0;  c = 6;  d = 6 },
+        @{ pc = 48; op = "TGETS"; a = 12; b = 3;  c = 7;  d = 775 },
+        @{ pc = 49; op = "TGETS"; a = 12; b = 12; c = 8;  d = 3080 },
+        @{ pc = 50; op = "KSTR";  a = 13; b = 0;  c = 9;  d = 9 },
+        @{ pc = 51; op = "MOV";   a = 14; b = 0;  c = 8;  d = 8 },
+        @{ pc = 52; op = "KSTR";  a = 15; b = 0;  c = 10; d = 10 },
+        @{ pc = 53; op = "CAT";   a = 12; b = 12; c = 15; d = 3087 },
+        @{ pc = 54; op = "CALL";  a = 9;  b = 1;  c = 3;  d = 259 },
+        @{ pc = 81; op = "MOV";   a = 12; b = 0;  c = 0;  d = 0 },
+        @{ pc = 82; op = "TGETS"; a = 10; b = 0;  c = 6;  d = 6 },
+        @{ pc = 83; op = "TGETS"; a = 13; b = 3;  c = 7;  d = 775 },
+        @{ pc = 84; op = "TGETS"; a = 13; b = 13; c = 8;  d = 3336 },
+        @{ pc = 85; op = "KSTR";  a = 14; b = 0;  c = 17; d = 17 },
+        @{ pc = 86; op = "MOV";   a = 15; b = 0;  c = 9;  d = 9 },
+        @{ pc = 87; op = "KSTR";  a = 16; b = 0;  c = 18; d = 18 },
+        @{ pc = 88; op = "CAT";   a = 13; b = 13; c = 16; d = 3344 },
+        @{ pc = 89; op = "CALL";  a = 10; b = 1;  c = 3;  d = 259 },
+        @{ pc = 93; op = "GGET";  a = 7;  b = 0;  c = 4;  d = 4 },
+        @{ pc = 94; op = "TGETS"; a = 7;  b = 7;  c = 19; d = 1811 },
+        @{ pc = 95; op = "MOV";   a = 9;  b = 0;  c = 4;  d = 4 },
+        @{ pc = 96; op = "TGETS"; a = 10; b = 3;  c = 16; d = 784 },
+        @{ pc = 97; op = "SUBVN"; a = 10; b = 10; c = 1;  d = 2561 },
+        @{ pc = 98; op = "CALL";  a = 7;  b = 2;  c = 3;  d = 515 },
+        @{ pc = 102; op = "MOV";   a = 10; b = 0;  c = 0;  d = 0 },
+        @{ pc = 103; op = "TGETS"; a = 8;  b = 0;  c = 6;  d = 6 },
+        @{ pc = 104; op = "TGETS"; a = 11; b = 3;  c = 7;  d = 775 },
+        @{ pc = 105; op = "TGETS"; a = 11; b = 11; c = 8;  d = 2824 },
+        @{ pc = 106; op = "KSTR";  a = 12; b = 0;  c = 20; d = 20 },
+        @{ pc = 107; op = "MOV";   a = 13; b = 0;  c = 7;  d = 7 },
+        @{ pc = 108; op = "KSTR";  a = 14; b = 0;  c = 21; d = 21 },
+        @{ pc = 109; op = "CAT";   a = 11; b = 11; c = 14; d = 2830 },
+        @{ pc = 110; op = "CALL";  a = 8;  b = 1;  c = 3;  d = 259 }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("pc$($check.pc) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("pc$($check.pc) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-BattleDoDirectDamageLogHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' battle_dodirectdamage_logprobe > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-BattleRegisterWorkflowForSkillsEntryShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -3682,7 +3777,25 @@ foreach ($name in $targets) {
             }
         }
 
-        $restHarnessFailures += ($restHuanhunShapeFailures + $restHuanhunHarnessFailures + $restBuffHarnessFailures + $restLogShapeFailures)
+        $doDirectDamageDis = Join-Path $outAbs "battle.proto14.dodirectdamage_log.dis.txt"
+        $doDirectDamageShapeCheck = Test-BattleDoDirectDamageLogShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $doDirectDamageDis
+        $doDirectDamageShapeFailures = @($doDirectDamageShapeCheck.failures).Count
+        if (-not $doDirectDamageShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $doDirectDamageShapeCheck.failures) {
+                Write-Warning "[battle dodirectdamage logshape] $msg"
+            }
+        }
+
+        $doDirectDamageLog = Join-Path $outAbs "battle.dodirectdamage_logprobe.log"
+        $doDirectDamageHarnessCheck = Test-BattleDoDirectDamageLogHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $doDirectDamageLog
+        $doDirectDamageHarnessFailures = if ($doDirectDamageHarnessCheck.ok) { 0 } else { 1 }
+        if (-not $doDirectDamageHarnessCheck.ok) {
+            $failed = $true
+            Write-Warning "[battle dodirectdamage logprobe] failed exit=$($doDirectDamageHarnessCheck.exit_code): $doDirectDamageLog"
+        }
+
+        $restHarnessFailures += ($restHuanhunShapeFailures + $restHuanhunHarnessFailures + $restBuffHarnessFailures + $restLogShapeFailures + $doDirectDamageShapeFailures + $doDirectDamageHarnessFailures)
 
         $beforeRoleActionDis = Join-Path $outAbs "battle.proto132.beforeroleaction_mincall.dis.txt"
         $beforeRoleActionShapeCheck = Test-BattleBeforeRoleActionMinCallShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeRoleActionDis

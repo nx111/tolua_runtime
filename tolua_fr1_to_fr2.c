@@ -9556,6 +9556,57 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback two bf.Log C3
+     windows observed after conversion:
+       MOV A15 <- A3; TGETS A14 B=3 C=22 D=790;
+       KSTR A16 D=23; MOV A17 <- A11/A12; KSTR A18 D=24;
+       CAT A16..A18; CALL A14 B1 C3
+     Both windows still keep the FR1 self slot on A15, while the sibling C7
+     calls in the same callback already use the FR2 hole after the function
+     slot. Move just these log windows from A15..A18 to A16..A19. */
+  if (ctx != NULL && ctx->proto_index == 297u) {
+    uint32_t p = 0;
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3);
+      BCOp o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6);
+
+      if (cop != BC_CALL || bc_a(c) != 14 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 16 || bc_b(i1) != 16 || bc_c(i1) != 18 || bc_d(i1) != 4114) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 18 || bc_d(i2) != 24) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 17 || (bc_d(i3) != 11 && bc_d(i3) != 12)) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 16 || bc_d(i4) != 23) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 14 || bc_b(i5) != 3 || bc_c(i5) != 22 || bc_d(i5) != 790) continue;
+      if (o6 != BC_MOV || bc_a(i6) != 15 || bc_d(i6) != 3) continue;
+
+      tolua_repack_remap_reg_range(&i6, o6, 15, 18, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i4, o4, 15, 18, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, 15, 18, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i2, o2, 15, 18, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      tolua_repack_remap_reg_range(&i1, o1, 15, 18, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 20, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto297 xixing bf.Log C3 fix A15..A18 -> A16..A19");
+    }
+  }
+
   /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback second C7
      window observed after conversion:
        GGET A14; TGETS A14 B=14 C=26 D=3610;

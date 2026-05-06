@@ -91,6 +91,15 @@ static void tolua_emitlog(const char *fmt, ...)
 	va_end(argp);
 }
 
+LUALIB_API int tolua_isgc64enabled(void)
+{
+#if defined(LUAJIT_VERSION)
+	return LJ_GC64 ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
 #if defined(LUAJIT_VERSION)
 static int tolua_should_load_fr1_bytecode_as_fr2(void)
 {

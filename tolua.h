@@ -68,6 +68,7 @@ int  tolua_newuint64(lua_State* L);
 char* tolua_convertbytecode(const char *buff, int sz, int target_fr2, int *out_sz);
 char* tolua_convertbytecodeex(const char *buff, int sz, int target_fr2, int *out_sz, int *error_code);
 int tolua_isbytecode(const char *buff, int sz);
+int tolua_isgc64enabled(void);
 const char* tolua_getlastbytecodedebug(void);
 const char* tolua_getbytecodeerrorstr(int error_code);
 

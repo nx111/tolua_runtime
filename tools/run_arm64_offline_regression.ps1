@@ -319,6 +319,61 @@ function Test-BattleRegisterPrevRoleHarness([string]$repoRootWsl, [string]$bytec
     }
 }
 
+function Test-BattleBeforeInitBattleGetAddMaxMpShape([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 19 1299 1303 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto19 1299..1303 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 1299; op = "CALL";  a = 11; b = 2;  c = 1;   d = 513;  tag = "pc1299" },
+        @{ pc = 1300; op = "MOV";   a = 13; b = 0;  c = 11;  d = 11;   tag = "pc1300" },
+        @{ pc = 1301; op = "TGETS"; a = 11; b = 11; c = 166; d = 2982; tag = "pc1301" },
+        @{ pc = 1302; op = "TGETS"; a = 14; b = 2;  c = 160; d = 672;  tag = "pc1302" },
+        @{ pc = 1303; op = "CALL";  a = 11; b = 2;  c = 3;   d = 515;  tag = "pc1303" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-BattleRestHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -1703,6 +1758,69 @@ function Test-GameEngineExecuteNextStoryActionCallbackWindows([string]$repoRootW
     }
 }
 
+function Test-GameEngineJianghuContentUnpackWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 112 189 201 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto112 189..201 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                pc = $pc
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 189; op = "TNEW";  a = 7;  b = 0;  c = 3;  d = 3;    tag = "pc189" },
+        @{ pc = 190; op = "UGET";  a = 8;  b = 0;  c = 0;  d = 0;    tag = "pc190" },
+        @{ pc = 191; op = "TGETS"; a = 8;  b = 8;  c = 5;  d = 2053; tag = "pc191" },
+        @{ pc = 192; op = "TGETS"; a = 8;  b = 8;  c = 20; d = 2068; tag = "pc192" },
+        @{ pc = 193; op = "TSETB"; a = 8;  b = 7;  c = 1;  d = 1793; tag = "pc193" },
+        @{ pc = 194; op = "UGET";  a = 8;  b = 0;  c = 2;  d = 2;    tag = "pc194" },
+        @{ pc = 195; op = "TGETS"; a = 8;  b = 8;  c = 44; d = 2092; tag = "pc195" },
+        @{ pc = 196; op = "UGET";  a = 10; b = 0;  c = 2;  d = 2;    tag = "pc196" },
+        @{ pc = 197; op = "TGETS"; a = 10; b = 10; c = 59; d = 2619; tag = "pc197" },
+        @{ pc = 198; op = "CALL";  a = 8;  b = 0;  c = 2;  d = 2;    tag = "pc198" },
+        @{ pc = 199; op = "TSETM"; a = 8;  b = 0;  c = 0;  d = 0;    tag = "pc199" },
+        @{ pc = 200; op = "CALL";  a = 5;  b = 0;  c = 2;  d = 2;    tag = "pc200" },
+        @{ pc = 201; op = "CALLM"; a = 4;  b = 2;  c = 0;  d = 512;  tag = "pc201" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
 function Test-AttackLogicRoleValuesArgShift([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
@@ -2652,6 +2770,28 @@ function Test-AttackLogicExtendTalents2TalentLogWindows([string]$repoRootWsl, [s
                 '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=20\s+B=0\s+C=134\s+D=134.*\r?\n' +
                 '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=19\s+B=19\s+C=20\s+D=4884.*\r?\n' +
                 '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
+        }
+        @{
+            proto = 320
+            dis = (Join-Path $outDir "attacklogic.proto320.extendtalents2_log_line6583.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=22\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=22\s+B=22\s+C=4\s+D=5636.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=23\s+B=0\s+C=139\s+D=139.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=24\s+B=0\s+C=17\s+D=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=25\s+B=0\s+C=140\s+D=140.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=22\s+B=22\s+C=25\s+D=5657.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=22\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=23\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=23\s+B=23\s+C=4\s+D=5892.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=24\s+B=0\s+C=139\s+D=139.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=25\s+B=0\s+C=17\s+D=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=26\s+B=0\s+C=140\s+D=140.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=23\s+B=23\s+C=26\s+D=5914.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=3\s+D=259'
         }
     )
 
@@ -3967,9 +4107,20 @@ foreach ($name in $targets) {
             }
         }
 
+        $registerPrevRoleDis = Join-Path $outAbs "battle.proto19.beforeinitbattle_getaddmaxmp.dis.txt"
+        $registerPrevRoleShapeCheck = Test-BattleBeforeInitBattleGetAddMaxMpShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $registerPrevRoleDis
+        $registerPrevRoleShapeFailures = @($registerPrevRoleShapeCheck.failures).Count
+        if (-not $registerPrevRoleShapeCheck.ok) {
+            $failed = $true
+            foreach ($msg in $registerPrevRoleShapeCheck.failures) {
+                Write-Warning "[battle beforeinitbattle getaddmaxmp shape] $msg"
+            }
+        }
+
         $registerPrevRoleLog = Join-Path $outAbs "battle.registerprevrole.log"
         $registerPrevRoleCheck = Test-BattleRegisterPrevRoleHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $registerPrevRoleLog
-        $registerPrevRoleFailures = if ($registerPrevRoleCheck.ok) { 0 } else { 1 }
+        $registerPrevRoleHarnessFailures = if ($registerPrevRoleCheck.ok) { 0 } else { 1 }
+        $registerPrevRoleFailures = $registerPrevRoleShapeFailures + $registerPrevRoleHarnessFailures
         if (-not $registerPrevRoleCheck.ok) {
             $failed = $true
             Write-Warning "[battle registerprevrole] harness failed exit=$($registerPrevRoleCheck.exit_code): $registerPrevRoleLog"
@@ -4254,12 +4405,19 @@ if (Test-Path $gameEnginePath) {
     $convFail = Get-LogCount $logPath "bytecode conversion failed"
     $gameEngineDis = Join-Path $outAbs "gameengine.proto108.executenextstoryaction.dis.txt"
     $gameEngineCheck = Test-GameEngineExecuteNextStoryActionCallbackWindows -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $gameEngineDis
-    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0 -or -not $gameEngineCheck.ok) {
+    $gameEngineJianghuDis = Join-Path $outAbs "gameengine.proto112.jianghucontent_unpack.dis.txt"
+    $gameEngineJianghuCheck = Test-GameEngineJianghuContentUnpackWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $gameEngineJianghuDis
+    if ($code -ne 0 -or $convFail -gt 0 -or $converted -eq 0 -or -not $gameEngineCheck.ok -or -not $gameEngineJianghuCheck.ok) {
         $failed = $true
     }
     if (-not $gameEngineCheck.ok) {
         foreach ($msg in $gameEngineCheck.failures) {
             Write-Warning "[gameengine story callback shape] $msg"
+        }
+    }
+    if (-not $gameEngineJianghuCheck.ok) {
+        foreach ($msg in $gameEngineJianghuCheck.failures) {
+            Write-Warning "[gameengine jianghu unpack shape] $msg"
         }
     }
 }

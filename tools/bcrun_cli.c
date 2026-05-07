@@ -666,7 +666,15 @@ static int run_battle_beforeskillanimation_callback_harness(lua_State *L)
       "local bf = { SpritesTable = {}, __log_count = 0, __attack_count = 0 }\n"
       "bf.__tag = 'bf'\n"
       "function bf:Log(msg)\n"
-      "  assert(self == bf, 'bf.Log self=' .. tostring(self))\n"
+      "  if self ~= bf then\n"
+      "    local rows = {}\n"
+      "    for i = 1, 24 do\n"
+      "      local name, val = debug.getlocal(2, i)\n"
+      "      if name == nil then break end\n"
+      "      rows[#rows + 1] = tostring(i) .. ':' .. tostring(name) .. '=' .. tostring(val)\n"
+      "    end\n"
+      "    error('bf.Log self=' .. tostring(self) .. ' msg=' .. tostring(msg) .. ' caller=' .. table.concat(rows, '|'), 0)\n"
+      "  end\n"
       "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
       "  self.__log_count = self.__log_count + 1\n"
       "end\n"
@@ -1943,12 +1951,17 @@ static int run_attacklogic_extendtalents3_registryprobe_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_attacklogic_extendtalents3_registryprobe");
 }
 
-static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode, int remove_mode, int xilog_mode, int shenshui_mode);
+static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int realdmglog_mode, int xixing_mode, int remove_mode, int xilog_mode, int shenshui_mode);
 static int run_attacklogic_extendtalents2_shenshuilog_harness(lua_State *L);
 
 static int run_attacklogic_extendtalents2_misslog_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 1, 0, 0, 0, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 1, 0, 0, 0, 0, 0);
+}
+
+static int run_attacklogic_extendtalents2_realdmglog_harness(lua_State *L)
+{
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 1, 0, 0, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_gedanglog_harness(lua_State *L)
@@ -2337,33 +2350,38 @@ static int run_attacklogic_extendtalents2_chaizhaolog_harness(lua_State *L)
   return dostring(L, harness, "@bcrun_attacklogic_extendtalents2_chaizhaolog");
 }
 
-static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int xixing_mode, int remove_mode, int xilog_mode, int shenshui_mode)
+static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, int misslog_mode, int realdmglog_mode, int xixing_mode, int remove_mode, int xilog_mode, int shenshui_mode)
 {
-  const char *setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
+  const char *setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
   const char *chunk_name = "@bcrun_attacklogic_extendtalents2_fullprobe_setup";
   const char *run_chunk = "@bcrun_attacklogic_extendtalents2_fullprobe";
   if (misslog_mode) {
-    setup = "__MISSLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
+    setup = "__MISSLOG_EXPECT__ = true\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
     chunk_name = "@bcrun_attacklogic_extendtalents2_misslog_setup";
     run_chunk = "@bcrun_attacklogic_extendtalents2_misslog";
   }
+  if (realdmglog_mode) {
+    setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = true\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
+    chunk_name = "@bcrun_attacklogic_extendtalents2_realdmglog_setup";
+    run_chunk = "@bcrun_attacklogic_extendtalents2_realdmglog";
+  }
   if (xixing_mode) {
-    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
+    setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = true\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
     chunk_name = "@bcrun_attacklogic_extendtalents2_xixing_setup";
     run_chunk = "@bcrun_attacklogic_extendtalents2_xixingcallback";
   }
   if (remove_mode) {
-    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = true\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
+    setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = true\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = false";
     chunk_name = "@bcrun_attacklogic_extendtalents2_removeprobe_setup";
     run_chunk = "@bcrun_attacklogic_extendtalents2_removeprobe";
   }
   if (xilog_mode) {
-    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = true\n__SHENSHUI_EXPECT__ = false";
+    setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = true\n__SHENSHUI_EXPECT__ = false";
     chunk_name = "@bcrun_attacklogic_extendtalents2_xilog_setup";
     run_chunk = "@bcrun_attacklogic_extendtalents2_xilog";
   }
   if (shenshui_mode) {
-    setup = "__MISSLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = true";
+    setup = "__MISSLOG_EXPECT__ = false\n__REALDMGLOG_EXPECT__ = false\n__XIXING_EXPECT__ = false\n__REMOVE_EXPECT__ = false\n__XILOG_EXPECT__ = false\n__SHENSHUI_EXPECT__ = true";
     chunk_name = "@bcrun_attacklogic_extendtalents2_shenshuilog_setup";
     run_chunk = "@bcrun_attacklogic_extendtalents2_shenshuilog";
   }
@@ -2528,6 +2546,7 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "  assert(type(msg) == 'string', 'bf.Log msg=' .. type(msg))\n"
       "  self.__log_count = self.__log_count + 1\n"
       "  if _G.__MISSLOG_EXPECT__ and string.find(msg, '闪避了本次攻击', 1, true) ~= nil then error('__MISS_OK__') end\n"
+      "  if _G.__REALDMGLOG_EXPECT__ and string.find(msg, '无视防御！', 1, true) ~= nil then error('__REALDMG_OK__') end\n"
       "  if _G.__XIXING_EXPECT__ and string.find(msg, '【吸星大法】发动！', 1, true) ~= nil then error('__XIXING_OK__') end\n"
       "  if _G.__XILOG_EXPECT__ and string.find(msg, '通过造成伤害恢复了', 1, true) ~= nil then error('__XILOG_OK__') end\n"
       "  if _G.__SHENSHUI_EXPECT__ and string.find(msg, '天赋【神水】发动！', 1, true) ~= nil then error('__SHENSHUI_OK__') end\n"
@@ -2737,6 +2756,7 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "  AddCastInfo = function() end,\n"
       "  AddAttackInfo = function() end\n"
       "})\n"
+      "if _G.__REALDMGLOG_EXPECT__ then prevRoleAtk.RealDmg = 12 end\n"
       "for upi = 1, 16 do\n"
       "  local upname, upvalue = debug.getupvalue(AttackLogic_extendTalents2, upi)\n"
       "  if upname == nil then break end\n"
@@ -2799,6 +2819,9 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
       "elseif _G.__MISSLOG_EXPECT__ then\n"
       "  assert(ok == false, 'extendtalents2 returned before miss log')\n"
       "  assert(string.find(tostring(ret), '__MISS_OK__', 1, true) ~= nil, 'extendtalents2 err=' .. tostring(ret))\n"
+      "elseif _G.__REALDMGLOG_EXPECT__ then\n"
+      "  assert(ok == false, 'extendtalents2 returned before realdmg log')\n"
+      "  assert(string.find(tostring(ret), '__REALDMG_OK__', 1, true) ~= nil, 'extendtalents2 err=' .. tostring(ret))\n"
       "elseif _G.__XIXING_EXPECT__ then\n"
       "  assert(ok == false, 'extendtalents2 returned before xixing log')\n"
       "  assert(string.find(tostring(ret), '__XIXING_OK__', 1, true) ~= nil, 'extendtalents2 err=' .. tostring(ret))\n"
@@ -2821,22 +2844,22 @@ static int run_attacklogic_extendtalents2_fullprobe_harness_impl(lua_State *L, i
 
 static int run_attacklogic_extendtalents2_fullprobe_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 0, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 0, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_xixingcallback_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 1, 0, 0, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 1, 0, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_removeprobe_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 1, 0, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 1, 0, 0);
 }
 
 static int run_attacklogic_extendtalents2_xilog_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 1, 0);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 0, 1, 0);
 }
 
 static int run_attacklogic_extendtalents2_xiaoyaolog_harness(lua_State *L)
@@ -2957,7 +2980,7 @@ static int run_attacklogic_extendtalents2_xiaoyaolog_harness(lua_State *L)
 
 static int run_attacklogic_extendtalents2_shenshuilog_harness(lua_State *L)
 {
-  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 0, 1);
+  return run_attacklogic_extendtalents2_fullprobe_harness_impl(L, 0, 0, 0, 0, 0, 1);
 }
 
 static int run_attacklogic_extendtalents2_yihualog_harness(lua_State *L)
@@ -3206,7 +3229,7 @@ int main(int argc, char **argv)
   int status = 0;
 
   if (argc != 2 && argc != 3 && argc != 4) {
-    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_dodirectdamage_logprobe|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeskillanimation_shuangbingqilog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xiaoyaolog|attacklogic_extendtalents2_shenshuilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
+    fprintf(stderr, "usage: %s <bytecode_file> [getrrevrole|registerprevrole|checktrigger|triggerlogic_refreshgetitems_setactive|buff_onroundbuff_maxcall|buff_onroundbuff_recoverymin|installyinjian|battle_rest|battle_rest_buffprobe|battle_rest_huanhun_mincall|battle_dodirectdamage_logprobe|battle_beforeskillanimation_callback|battle_beforeskillanimation_wushuanglog|battle_beforeskillanimation_shuangbingqilog|battle_beforeroleaction_mincall|battle_beforeroleaction_logprobe|battle_beforeroleaction_buffprobe|battle_minusskillcd_skilllog|attacklogic_tempvalue|attacklogic_tempvalue_chain|attacklogic_extendtalents_maxprobe|attacklogic_extendtalents_bilianglog|attacklogic_extendtalents3_registryprobe|attacklogic_extendtalents2_gedanglog|attacklogic_extendtalents2_misslog|attacklogic_extendtalents2_realdmglog|attacklogic_extendtalents2_chaizhaolog|attacklogic_extendtalents2_fullprobe|attacklogic_extendtalents2_removeprobe|attacklogic_extendtalents2_xilog|attacklogic_extendtalents2_xiaoyaolog|attacklogic_extendtalents2_shenshuilog|attacklogic_extendtalents2_xixingcallback|attacklogic_extendtalents2_yihualog] [extra_bytecode_file]\n", argv[0]);
     return 2;
   }
 
@@ -3265,6 +3288,7 @@ int main(int argc, char **argv)
        strcmp(mode, "attacklogic_extendtalents3_registryprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_gedanglog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_misslog") == 0 ||
+       strcmp(mode, "attacklogic_extendtalents2_realdmglog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_chaizhaolog") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_fullprobe") == 0 ||
        strcmp(mode, "attacklogic_extendtalents2_removeprobe") == 0 ||
@@ -3319,6 +3343,8 @@ int main(int argc, char **argv)
       status = run_attacklogic_extendtalents2_gedanglog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_misslog") == 0) {
       status = run_attacklogic_extendtalents2_misslog_harness(L);
+    } else if (strcmp(mode, "attacklogic_extendtalents2_realdmglog") == 0) {
+      status = run_attacklogic_extendtalents2_realdmglog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_chaizhaolog") == 0) {
       status = run_attacklogic_extendtalents2_chaizhaolog_harness(L);
     } else if (strcmp(mode, "attacklogic_extendtalents2_fullprobe") == 0) {

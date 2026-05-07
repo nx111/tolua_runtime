@@ -2540,8 +2540,36 @@ function Test-AttackLogicExtendTalents2MissLogWindow([string]$repoRootWsl, [stri
         '^\d{4}\s+line=6346\s+KSTR\s+A=14\s+B=0\s+C=28\s+D=28.*\r?\n' +
         '^\d{4}\s+line=6346\s+CAT\s+A=13\s+B=13\s+C=14\s+D=3342.*\r?\n' +
         '^\d{4}\s+line=6346\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $badPattern2 = '(?ms)^\d{4}\s+line=6350\s+MOV\s+A=11\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=12\s+B=0\s+C=31\s+D=31.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=13\s+B=0\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=13\s+B=13\s+C=4\s+D=3332.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=14\s+B=0\s+C=32\s+D=32.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=15\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=15\s+B=15\s+C=4\s+D=3844.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=16\s+B=0\s+C=33\s+D=33.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=17\s+B=5\s+C=29\s+D=1309.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=18\s+B=0\s+C=34\s+D=34.*\r?\n' +
+        '^\d{4}\s+line=6350\s+CAT\s+A=12\s+B=12\s+C=18\s+D=3090.*\r?\n' +
+        '^\d{4}\s+line=6350\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $goodPattern2 = '(?ms)^\d{4}\s+line=6350\s+MOV\s+A=12\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=13\s+B=0\s+C=31\s+D=31.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=14\s+B=0\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=14\s+B=14\s+C=4\s+D=3588.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=15\s+B=0\s+C=32\s+D=32.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=16\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=16\s+B=16\s+C=4\s+D=4100.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=17\s+B=0\s+C=33\s+D=33.*\r?\n' +
+        '^\d{4}\s+line=6350\s+TGETS\s+A=18\s+B=5\s+C=29\s+D=1309.*\r?\n' +
+        '^\d{4}\s+line=6350\s+KSTR\s+A=19\s+B=0\s+C=34\s+D=34.*\r?\n' +
+        '^\d{4}\s+line=6350\s+CAT\s+A=13\s+B=13\s+C=19.*\r?\n' +
+        '^\d{4}\s+line=6350\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
     $badCount = [regex]::Matches($disText, $badPattern).Count
     $goodCount = [regex]::Matches($disText, $goodPattern).Count
+    $badCount2 = [regex]::Matches($disText, $badPattern2).Count
+    $goodCount2 = [regex]::Matches($disText, $goodPattern2).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badCount -ne 0) {
@@ -2549,6 +2577,64 @@ function Test-AttackLogicExtendTalents2MissLogWindow([string]$repoRootWsl, [stri
     }
     if ($goodCount -eq 0) {
         $fails.Add("missing corrected proto320 extendtalents2 miss bf.Log window")
+    }
+    if ($badCount2 -ne 0) {
+        $fails.Add("residual bad proto320 extendtalents2 realdmg bf.Log window")
+    }
+    if ($goodCount2 -eq 0) {
+        $fails.Add("missing corrected proto320 extendtalents2 realdmg bf.Log window")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicShieldLogWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 3 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto3 failed exit=$code")
+        }
+    }
+
+    $disText = Get-Content $disPath -Raw
+    $badPattern = '(?ms)^\d{4}\s+line=315\s+MOV\s+A=11\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=10\s+B=4\s+C=59\s+D=1083.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=12\s+B=0\s+C=89\s+D=89.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=13\s+B=3\s+C=4\s+D=772.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=13\s+B=13\s+C=0\s+D=3328.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=14\s+B=0\s+C=90\s+D=90.*\r?\n' +
+        '^\d{4}\s+line=315\s+MOV\s+A=15\s+B=0\s+C=9\s+D=9.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=16\s+B=0\s+C=91\s+D=91.*\r?\n' +
+        '^\d{4}\s+line=316\s+CAT\s+A=12\s+B=12\s+C=16\s+D=3088.*\r?\n' +
+        '^\d{4}\s+line=316\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $goodPattern = '(?ms)^\d{4}\s+line=315\s+MOV\s+A=12\s+B=0\s+C=4\s+D=4.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=10\s+B=4\s+C=59\s+D=1083.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=13\s+B=0\s+C=89\s+D=89.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=14\s+B=3\s+C=4\s+D=772.*\r?\n' +
+        '^\d{4}\s+line=315\s+TGETS\s+A=14\s+B=14\s+C=0\s+D=3584.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=15\s+B=0\s+C=90\s+D=90.*\r?\n' +
+        '^\d{4}\s+line=315\s+MOV\s+A=16\s+B=0\s+C=9\s+D=9.*\r?\n' +
+        '^\d{4}\s+line=315\s+KSTR\s+A=17\s+B=0\s+C=91\s+D=91.*\r?\n' +
+        '^\d{4}\s+line=316\s+CAT\s+A=13\s+B=13\s+C=17\s+D=3345.*\r?\n' +
+        '^\d{4}\s+line=316\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $badCount = [regex]::Matches($disText, $badPattern).Count
+    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    if ($badCount -ne 0) {
+        $fails.Add("residual bad proto3 shield-loss bf.Log window")
+    }
+    if ($goodCount -eq 0) {
+        $fails.Add("missing corrected proto3 shield-loss bf.Log window")
     }
 
     return [pscustomobject]@{
@@ -3932,6 +4018,19 @@ function Test-AttackLogicExtendTalents2MissLogHarness([string]$repoRootWsl, [str
     }
 }
 
+function Test-AttackLogicExtendTalents2RealDmgLogHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_realdmglog > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicExtendTalents2ChaizhaoLogHarness([string]$repoRootWsl, [string]$battleBytecodeWsl, [string]$attacklogicBytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -4702,6 +4801,16 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
+    $attackLogicShieldLogDis = Join-Path $outAbs "attacklogic.proto3.shieldlog.dis.txt"
+    $attackLogicShieldLogCheck = Test-AttackLogicShieldLogWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $attackLogicShieldLogDis
+    $attackLogicShieldLogFailures = @($attackLogicShieldLogCheck.failures).Count
+    if (-not $attackLogicShieldLogCheck.ok) {
+        $failed = $true
+        foreach ($msg in $attackLogicShieldLogCheck.failures) {
+            Write-Warning "[attacklogic shield bf.log shape] $msg"
+        }
+    }
+
     $extendTalents2ChaizhaoDis = Join-Path $outAbs "attacklogic.proto364.extendtalents2_chaizhaolog.dis.txt"
     $extendTalents2ChaizhaoCheck = Test-AttackLogicExtendTalents2ChaizhaoLogShift -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalents2ChaizhaoDis
     $extendTalents2ChaizhaoFailures = @($extendTalents2ChaizhaoCheck.failures).Count
@@ -4821,6 +4930,7 @@ if (Test-Path $attacklogicPath) {
     $chainHarnessFailures = 0
     $extendTalents2LogHarnessFailures = 0
     $extendTalents2MissHarnessFailures = 0
+    $extendTalents2RealDmgHarnessFailures = 0
     $extendTalents2YihuaHarnessFailures = 0
     $extendTalents2FullProbeFailures = 0
     $extendTalents2MissLog = Join-Path $outAbs "attacklogic.extendtalents2.misslog.log"
@@ -4829,6 +4939,13 @@ if (Test-Path $attacklogicPath) {
     if (-not $extendTalents2MissHarnessCheck.ok) {
         $failed = $true
         Write-Warning "[attacklogic extendtalents2 misslog] harness failed exit=$($extendTalents2MissHarnessCheck.exit_code): $extendTalents2MissLog"
+    }
+    $extendTalents2RealDmgLog = Join-Path $outAbs "attacklogic.extendtalents2.realdmglog.log"
+    $extendTalents2RealDmgHarnessCheck = Test-AttackLogicExtendTalents2RealDmgLogHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2RealDmgLog
+    $extendTalents2RealDmgHarnessFailures = if ($extendTalents2RealDmgHarnessCheck.ok) { 0 } else { 1 }
+    if (-not $extendTalents2RealDmgHarnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[attacklogic extendtalents2 realdmglog] harness failed exit=$($extendTalents2RealDmgHarnessCheck.exit_code): $extendTalents2RealDmgLog"
     }
     $extendTalents2FullProbeLog = Join-Path $outAbs "attacklogic.extendtalents2.fullprobe.log"
     $extendTalents2FullProbeCheck = Test-AttackLogicExtendTalents2FullProbeHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2FullProbeLog
@@ -4886,7 +5003,9 @@ if (Test-Path $attacklogicPath) {
     # window checks remain the primary proof point for the exact call shape.
     # The misslog harness stays in gating because it reuses the same
     # single-file stub as fullprobe, but forces result.Hp==0 and proves the
-    # early line6346 branch that fullprobe does not pin.
+    # early line6346 branch that fullprobe does not pin. The paired realdmglog
+    # harness stays in gating because it drives the sibling line6350 branch
+    # with prevRoleAtk.RealDmg > 0.
     # The xixing callback harness stays diagnostic-only for now: the single-file
     # loader still aborts early at tmp.lua:26986 before that workflow is
     # registered, so it can prove stub coverage gaps but not runtime regressions.
@@ -4918,10 +5037,10 @@ if (Test-Path $attacklogicPath) {
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
         rolevalues_log_fail   = $roleValuesLogFailures
-        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiaoyaoFailures + $extendTalents2ShenshuiFailures + $extendTalents2XixingLogFailures + $extendTalents2XixingC7Failures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
+        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $attackLogicShieldLogFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiaoyaoFailures + $extendTalents2ShenshuiFailures + $extendTalents2XixingLogFailures + $extendTalents2XixingC7Failures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
-        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures + $extendTalents2XiaoyaoHarnessFailures)
+        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2RealDmgHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures + $extendTalents2XiaoyaoHarnessFailures)
         log_path              = $logPath
         out_path              = $outPath
     }

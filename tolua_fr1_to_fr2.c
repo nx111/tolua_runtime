@@ -6313,6 +6313,69 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto177 BATTLE_BeforeSkillAnimation "双兵器" main-path bf.Log window
+     observed after conversion:
+       MOV A9 <- A0; TGETS A8 <- A0[13];
+       TGETS A10 <- A1[14]; TGETS A10 <- A10[10]; KSTR A11;
+       TGETS A12 <- A7[121]; TGETB A12 <- A12[2]; KSTR A13;
+       CAT A10..A13; CALL A8 B1 C3
+     GC64 still requires the FR2 hole after the function slot, so move just
+     this method-self/string build range from A9..A13 to A10..A14. */
+  if (ctx != NULL && ctx->proto_index == 177u) {
+    uint32_t p = 0;
+    for (p = 9; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCIns i9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 9) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8), o9 = bc_op(i9);
+
+      if (cop != BC_CALL || bc_a(c) != 8 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 10 || bc_b(i1) != 10 || bc_c(i1) != 13 || bc_d(i1) != 2573) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 13 || bc_d(i2) != 124) continue;
+      if (o3 != BC_TGETB || bc_a(i3) != 12 || bc_b(i3) != 12 || bc_c(i3) != 2 || bc_d(i3) != 3074) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 12 || bc_b(i4) != 7 || bc_c(i4) != 121 || bc_d(i4) != 1913) continue;
+      if (o5 != BC_KSTR || bc_a(i5) != 11 || bc_d(i5) != 123) continue;
+      if (o6 != BC_TGETS || bc_a(i6) != 10 || bc_b(i6) != 10 || bc_c(i6) != 10 || bc_d(i6) != 2570) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != 10 || bc_b(i7) != 1 || bc_c(i7) != 14 || bc_d(i7) != 270) continue;
+      if (o8 != BC_TGETS || bc_a(i8) != 8 || bc_b(i8) != 0 || bc_c(i8) != 13 || bc_d(i8) != 13) continue;
+      if (o9 != BC_MOV || bc_a(i9) != 9 || bc_d(i9) != 0) continue;
+
+      tolua_repack_remap_reg_range(&i9, o9, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 9) * 4, (uint32_t)i9, be);
+      tolua_repack_remap_reg_range(&i7, o7, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 7) * 4, (uint32_t)i7, be);
+      tolua_repack_remap_reg_range(&i6, o6, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i5, o5, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      tolua_repack_remap_reg_range(&i4, o4, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i2, o2, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      tolua_repack_remap_reg_range(&i1, o1, 9, 13, 10);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 22, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto177 BeforeSkillAnimation shuangbingqi main bf.Log fix A9..A13 -> A10..A14");
+    }
+  }
+
   /* proto192 "还魂咒" recovery math.min window observed after conversion:
        GGET A6; TGETS A6[1572=min]; TGETS A7<-A1[280]; TGETS A8<-A1[279];
        SUBVV A7<-A7-A8; MULVN A7; MULVN A8; CALL A6 B2 C3
@@ -6891,6 +6954,71 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       TOLUA_REPACK_LOG(ctx, p,
                        "apply xilog bf.Log self fix A8..A11 -> A9..A12");
+    }
+  }
+
+  /* proto285 shenshui log window observed after conversion:
+       MOV A12 <- A3; TGETS A11 B=3 C=10; KSTR A13; TGETS A14 B=1 C=12;
+       TGETS A14 B=14 C=13; KSTR A15; TGETV A16 B=9 C=10; KSTR A17;
+       CAT A13..A17; CALL A11 B1 C3
+     Native GC64 keeps bf self on A12 and the concatenated message on A13, so
+     this callback log branch must shift the string-building chain right by
+     one slot. */
+  if (ctx != NULL && ctx->proto_index == 285u) {
+    uint32_t p = 0;
+    for (p = 9; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCIns i9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 9) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8), o9 = bc_op(i9);
+
+      if (cop != BC_CALL || bc_a(c) != 11 || bc_b(c) != 1 || bc_c(c) != 3) continue;
+      if (o1 != BC_CAT || bc_a(i1) != 13 || bc_b(i1) != 13 || bc_c(i1) != 17 || bc_d(i1) != 3345) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 17 || bc_d(i2) != 15) continue;
+      if (o3 != BC_TGETV || bc_a(i3) != 16 || bc_b(i3) != 9 || bc_c(i3) != 10 || bc_d(i3) != 2314) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 15 || bc_d(i4) != 14) continue;
+      if (o5 != BC_TGETS || bc_a(i5) != 14 || bc_b(i5) != 14 || bc_c(i5) != 13 || bc_d(i5) != 3597) continue;
+      if (o6 != BC_TGETS || bc_a(i6) != 14 || bc_b(i6) != 1 || bc_c(i6) != 12 || bc_d(i6) != 268) continue;
+      if (o7 != BC_KSTR || bc_a(i7) != 13 || bc_d(i7) != 11) continue;
+      if (o8 != BC_TGETS || bc_a(i8) != 11 || bc_b(i8) != 3 || bc_c(i8) != 10 || bc_d(i8) != 778) continue;
+      if (o9 != BC_MOV || bc_a(i9) != 12 || bc_d(i9) != 3) continue;
+
+      setbc_a(&i9, 13);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 9) * 4, (uint32_t)i9, be);
+      setbc_a(&i7, 14);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 7) * 4, (uint32_t)i7, be);
+      setbc_a(&i6, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      setbc_a(&i5, 15);
+      setbc_b(&i5, 15);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i4, 16);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      setbc_a(&i3, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 14);
+      setbc_b(&i1, 14);
+      setbc_c(&i1, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 19, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto285 shenshui bf.Log self fix A12..A17 -> A13..A18");
     }
   }
 
@@ -9693,13 +9821,16 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
-  /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback two bf.Log C3
+  /* proto297 AttackLogic_extendTalents2 "吸星大法改" callback three bf.Log C3
      windows observed after conversion:
-       MOV A15 <- A3; TGETS A14 B=3 C=22 D=790;
-       KSTR A16 D=23; MOV A17 <- A11/A12; KSTR A18 D=24;
-       CAT A16..A18; CALL A14 B1 C3
-     Both windows still keep the FR1 self slot on A15, while the sibling C7
-     calls in the same callback already use the FR2 hole after the function
+        MOV A15 <- A3; TGETS A14 B=3 C=22 D=790;
+        KSTR A16 D=23; MOV A17 <- A11/A12; KSTR A18 D=24;
+        CAT A16..A18; CALL A14 B1 C3
+        MOV A15 <- A3; TGETS A14 B=3 C=22 D=790;
+        KSTR A16 D=27; MOV A17 <- A13; KSTR A18 D=28;
+        CAT A16..A18; CALL A14 B1 C3
+     All three windows still keep the FR1 self slot on A15, while the sibling
+     C7 calls in the same callback already use the FR2 hole after the function
      slot. Move just these log windows from A15..A18 to A16..A19. */
   if (ctx != NULL && ctx->proto_index == 297u) {
     uint32_t p = 0;
@@ -9716,11 +9847,13 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
 
       if (cop != BC_CALL || bc_a(c) != 14 || bc_b(c) != 1 || bc_c(c) != 3) continue;
       if (o1 != BC_CAT || bc_a(i1) != 16 || bc_b(i1) != 16 || bc_c(i1) != 18 || bc_d(i1) != 4114) continue;
-      if (o2 != BC_KSTR || bc_a(i2) != 18 || bc_d(i2) != 24) continue;
-      if (o3 != BC_MOV || bc_a(i3) != 17 || (bc_d(i3) != 11 && bc_d(i3) != 12)) continue;
-      if (o4 != BC_KSTR || bc_a(i4) != 16 || bc_d(i4) != 23) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 18 || (bc_d(i2) != 24 && bc_d(i2) != 28)) continue;
+      if (o3 != BC_MOV || bc_a(i3) != 17 || (bc_d(i3) != 11 && bc_d(i3) != 12 && bc_d(i3) != 13)) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 16 || (bc_d(i4) != 23 && bc_d(i4) != 27)) continue;
       if (o5 != BC_TGETS || bc_a(i5) != 14 || bc_b(i5) != 3 || bc_c(i5) != 22 || bc_d(i5) != 790) continue;
       if (o6 != BC_MOV || bc_a(i6) != 15 || bc_d(i6) != 3) continue;
+      if (!((bc_d(i4) == 23 && bc_d(i2) == 24 && (bc_d(i3) == 11 || bc_d(i3) == 12)) ||
+            (bc_d(i4) == 27 && bc_d(i2) == 28 && bc_d(i3) == 13))) continue;
 
       tolua_repack_remap_reg_range(&i6, o6, 15, 18, 16);
       tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);

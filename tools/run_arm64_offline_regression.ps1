@@ -778,13 +778,13 @@ function Test-BattleBeforeSkillAnimationShuangbingqiShape([string]$repoRootWsl, 
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 151 60 67 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 177 811 820 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto151 60..67 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto177 811..820 failed exit=$code")
         }
     }
 
@@ -804,14 +804,16 @@ function Test-BattleBeforeSkillAnimationShuangbingqiShape([string]$repoRootWsl, 
     }
 
     $checks = @(
-        @{ pc = 60; op = "MOV";   a = 10; b = 0;  c = 0;  d = 0;    tag = "pc60" },
-        @{ pc = 61; op = "TGETS"; a = 8;  b = 0;  c = 15; d = 15;   tag = "pc61" },
-        @{ pc = 62; op = "KSTR";  a = 11; b = 0;  c = 16; d = 16;   tag = "pc62" },
-        @{ pc = 63; op = "TGETS"; a = 12; b = 1;  c = 17; d = 273;  tag = "pc63" },
-        @{ pc = 64; op = "TGETS"; a = 12; b = 12; c = 2;  d = 3074; tag = "pc64" },
-        @{ pc = 65; op = "KSTR";  a = 13; b = 0;  c = 18; d = 18;   tag = "pc65" },
-        @{ pc = 66; op = "CAT";   a = 11; b = 11; c = 13; d = 2829; tag = "pc66" },
-        @{ pc = 67; op = "CALL";  a = 8;  b = 1;  c = 3;  d = 259;  tag = "pc67" }
+        @{ pc = 811; op = "MOV";   a = 10; b = 0;  c = 0;   d = 0;    tag = "pc811" },
+        @{ pc = 812; op = "TGETS"; a = 8;  b = 0;  c = 13;  d = 13;   tag = "pc812" },
+        @{ pc = 813; op = "TGETS"; a = 11; b = 1;  c = 14;  d = 270;  tag = "pc813" },
+        @{ pc = 814; op = "TGETS"; a = 11; b = 11; c = 10;  d = 2826; tag = "pc814" },
+        @{ pc = 815; op = "KSTR";  a = 12; b = 0;  c = 123; d = 123;  tag = "pc815" },
+        @{ pc = 816; op = "TGETS"; a = 13; b = 7;  c = 121; d = 1913; tag = "pc816" },
+        @{ pc = 817; op = "TGETB"; a = 13; b = 13; c = 2;   d = 3330; tag = "pc817" },
+        @{ pc = 818; op = "KSTR";  a = 14; b = 0;  c = 124; d = 124;  tag = "pc818" },
+        @{ pc = 819; op = "CAT";   a = 11; b = 11; c = 14;  d = 2830; tag = "pc819" },
+        @{ pc = 820; op = "CALL";  a = 8;  b = 1;  c = 3;   d = 259;  tag = "pc820" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -2892,29 +2894,110 @@ function Test-AttackLogicExtendTalents2XixingLogWindows([string]$repoRootWsl, [s
     }
 
     $disText = Get-Content $disPath -Raw
-    $badPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+    $badPatternA = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=3\s+C=22\s+D=790.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=\d+\s+C=23\s+D=23.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=\d+\s+C=(?:11|12)\s+D=(?:11|12).*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=18\s+B=\d+\s+C=24\s+D=24.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=16\s+B=16\s+C=18\s+D=4114.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=14\s+B=1\s+C=3\s+D=259'
-    $goodPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+    $goodPatternA = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=3\s+C=22\s+D=790.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=17\s+B=\d+\s+C=23\s+D=23.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=\d+\s+C=(?:11|12)\s+D=(?:11|12).*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=19\s+B=\d+\s+C=24\s+D=24.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=17\s+B=17\s+C=19\s+D=4371.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=14\s+B=1\s+C=3\s+D=259'
+    $badPatternB = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=3\s+C=22\s+D=790.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=\d+\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=\d+\s+C=13\s+D=13.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=18\s+B=\d+\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=16\s+B=16\s+C=18\s+D=4114.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=14\s+B=1\s+C=3\s+D=259'
+    $goodPatternB = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=3\s+C=22\s+D=790.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=17\s+B=\d+\s+C=27\s+D=27.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=\d+\s+C=13\s+D=13.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=19\s+B=\d+\s+C=28\s+D=28.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=17\s+B=17\s+C=19\s+D=4371.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=14\s+B=1\s+C=3\s+D=259'
 
-    $badCount = [regex]::Matches($disText, $badPattern).Count
-    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+    $badCountA = [regex]::Matches($disText, $badPatternA).Count
+    $goodCountA = [regex]::Matches($disText, $goodPatternA).Count
+    $badCountB = [regex]::Matches($disText, $badPatternB).Count
+    $goodCountB = [regex]::Matches($disText, $goodPatternB).Count
     $fails = New-Object System.Collections.Generic.List[string]
-    if ($badCount -ne 0) {
-        $fails.Add("residual bad proto297 xixing bf.Log C3 window")
+    if ($badCountA -ne 0) {
+        $fails.Add("residual bad proto297 xixing bf.Log C3 window set A")
     }
-    if ($goodCount -ne 2) {
-        $fails.Add("expected 2 corrected proto297 xixing bf.Log C3 windows, got $goodCount")
+    if ($goodCountA -ne 2) {
+        $fails.Add("expected 2 corrected proto297 xixing bf.Log C3 windows in set A, got $goodCountA")
+    }
+    if ($badCountB -ne 0) {
+        $fails.Add("residual bad proto297 xixing bf.Log C3 window set B")
+    }
+    if ($goodCountB -ne 1) {
+        $fails.Add("expected 1 corrected proto297 xixing bf.Log C3 window in set B, got $goodCountB")
+    }
+
+    return [pscustomobject]@{
+        ok = ($fails.Count -eq 0)
+        failures = @($fails)
+    }
+}
+
+function Test-AttackLogicExtendTalents2ShenshuiLogWindow([string]$repoRootWsl, [string]$bytecodeWsl, [string]$disPath) {
+    $disWsl = Convert-ToWslPath $disPath
+    $dumpCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 285 38 47 > '$disWsl'"
+    ) -join " && "
+    $code = Invoke-WslBash $dumpCmd
+    if ($code -ne 0) {
+        return [pscustomobject]@{
+            ok = $false
+            failures = @("bc_dump_proto_wsl proto285 38..47 failed exit=$code")
+        }
+    }
+
+    $rows = @{}
+    foreach ($line in (Get-Content $disPath)) {
+        if ($line -match '^(?<pc>\d{4})(?:\s+line=\d+)?\s+(?<op>[A-Z0-9]+)\s+A=(?<a>\d+)\s+B=(?<b>\d+)\s+C=(?<c>\d+)\s+D=(?<d>\d+)') {
+            $pc = [int]$matches['pc']
+            $rows[$pc] = [pscustomobject]@{
+                op = $matches['op']
+                a = [int]$matches['a']
+                b = [int]$matches['b']
+                c = [int]$matches['c']
+                d = [int]$matches['d']
+            }
+        }
+    }
+
+    $checks = @(
+        @{ pc = 38; op = "MOV";   a = 13; b = 0;  c = 3;  d = 3;    tag = "pc38" },
+        @{ pc = 39; op = "TGETS"; a = 11; b = 3;  c = 10; d = 778;  tag = "pc39" },
+        @{ pc = 40; op = "KSTR";  a = 14; b = 0;  c = 11; d = 11;   tag = "pc40" },
+        @{ pc = 41; op = "TGETS"; a = 15; b = 1;  c = 12; d = 268;  tag = "pc41" },
+        @{ pc = 42; op = "TGETS"; a = 15; b = 15; c = 13; d = 3853; tag = "pc42" },
+        @{ pc = 43; op = "KSTR";  a = 16; b = 0;  c = 14; d = 14;   tag = "pc43" },
+        @{ pc = 44; op = "TGETV"; a = 17; b = 9;  c = 10; d = 2314; tag = "pc44" },
+        @{ pc = 45; op = "KSTR";  a = 18; b = 0;  c = 15; d = 15;   tag = "pc45" },
+        @{ pc = 46; op = "CAT";   a = 14; b = 14; c = 18; d = 3602; tag = "pc46" },
+        @{ pc = 47; op = "CALL";  a = 11; b = 1;  c = 3;  d = 259;  tag = "pc47" }
+    )
+
+    $fails = New-Object System.Collections.Generic.List[string]
+    foreach ($check in $checks) {
+        if (-not $rows.ContainsKey($check.pc)) {
+            $fails.Add("$($check.tag) missing")
+            continue
+        }
+        $row = $rows[$check.pc]
+        if ($row.op -ne $check.op -or $row.a -ne $check.a -or $row.b -ne $check.b -or $row.c -ne $check.c -or $row.d -ne $check.d) {
+            $fails.Add("$($check.tag) got=$($row.op) A=$($row.a) B=$($row.b) C=$($row.c) D=$($row.d)")
+        }
     }
 
     return [pscustomobject]@{
@@ -3592,6 +3675,19 @@ function Test-AttackLogicExtendTalents2XiaoyaoLogHarness([string]$repoRootWsl, [
     }
 }
 
+function Test-AttackLogicExtendTalents2ShenshuiLogHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_shenshuilog > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicExtendTalents2XixingCallbackHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -3939,7 +4035,7 @@ foreach ($name in $targets) {
             Write-Warning "[battle beforeskillanimation wushuang harness] failed exit=$($beforeSkillAnimationWushuangHarnessCheck.exit_code): $beforeSkillAnimationWushuangLog"
         }
 
-        $beforeSkillAnimationShuangbingqiDis = Join-Path $outAbs "battle.proto151.beforeskillanimation_shuangbingqi.dis.txt"
+        $beforeSkillAnimationShuangbingqiDis = Join-Path $outAbs "battle.proto177.beforeskillanimation_shuangbingqi_main.dis.txt"
         $beforeSkillAnimationShuangbingqiShapeCheck = Test-BattleBeforeSkillAnimationShuangbingqiShape -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $beforeSkillAnimationShuangbingqiDis
         $beforeSkillAnimationShuangbingqiShapeFailures = @($beforeSkillAnimationShuangbingqiShapeCheck.failures).Count
         if (-not $beforeSkillAnimationShuangbingqiShapeCheck.ok) {
@@ -4324,6 +4420,15 @@ if (Test-Path $attacklogicPath) {
             Write-Warning "[attacklogic extendtalents2 xiaoyao bf.log shape] $msg"
         }
     }
+    $extendTalents2ShenshuiDis = Join-Path $outAbs "attacklogic.proto285.extendtalents2_shenshuilog.dis.txt"
+    $extendTalents2ShenshuiCheck = Test-AttackLogicExtendTalents2ShenshuiLogWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalents2ShenshuiDis
+    $extendTalents2ShenshuiFailures = @($extendTalents2ShenshuiCheck.failures).Count
+    if (-not $extendTalents2ShenshuiCheck.ok) {
+        $failed = $true
+        foreach ($msg in $extendTalents2ShenshuiCheck.failures) {
+            Write-Warning "[attacklogic extendtalents2 shenshui bf.log shape] $msg"
+        }
+    }
 
     $extendTalents2XixingLogDis = Join-Path $outAbs "attacklogic.proto297.extendtalents2_xixing_log.dis.txt"
     $extendTalents2XixingLogCheck = Test-AttackLogicExtendTalents2XixingLogWindows -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $extendTalents2XixingLogDis
@@ -4413,6 +4518,12 @@ if (Test-Path $attacklogicPath) {
         $failed = $true
         Write-Warning "[attacklogic extendtalents2 xiaoyaolog] harness failed exit=$($extendTalents2XiaoyaoHarnessCheck.exit_code): $extendTalents2XiaoyaoLog"
     }
+    $extendTalents2ShenshuiLog = Join-Path $outAbs "attacklogic.extendtalents2.shenshuilog.log"
+    $extendTalents2ShenshuiHarnessCheck = Test-AttackLogicExtendTalents2ShenshuiLogHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2ShenshuiLog
+    $extendTalents2ShenshuiHarnessFailures = 0
+    if (-not $extendTalents2ShenshuiHarnessCheck.ok) {
+        Write-Warning "[attacklogic extendtalents2 shenshuilog] diagnostic-only exit=$($extendTalents2ShenshuiHarnessCheck.exit_code): $extendTalents2ShenshuiLog"
+    }
 
     if ($battleOutPath -and (Test-Path $battleOutPath)) {
         $chainHarnessLog = Join-Path $outAbs "attacklogic.tempvalue_chain.log"
@@ -4467,7 +4578,7 @@ if (Test-Path $attacklogicPath) {
         extend3_shape_fail    = $extend3ShapeFailures
         rolevalues_shape_fail = $roleValuesShapeFailures
         rolevalues_log_fail   = $roleValuesLogFailures
-        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiaoyaoFailures + $extendTalents2XixingLogFailures + $extendTalents2XixingC7Failures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
+        extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiaoyaoFailures + $extendTalents2ShenshuiFailures + $extendTalents2XixingLogFailures + $extendTalents2XixingC7Failures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
         extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures + $extendTalents2XiaoyaoHarnessFailures)

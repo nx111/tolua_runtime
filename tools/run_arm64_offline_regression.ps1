@@ -2454,6 +2454,42 @@ function Test-AttackLogicExtendTalents2ChaizhaoLogShift([string]$repoRootWsl, [s
 function Test-AttackLogicExtendTalents2TalentLogWindows([string]$repoRootWsl, [string]$bytecodeWsl, [string]$outDir) {
     $targets = @(
         @{
+            proto = 303
+            dis = (Join-Path $outDir "attacklogic.proto303.toudongxi_log0.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=3\s+C=12\s+D=780.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=1\s+C=13\s+D=269.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=10\s+C=14\s+D=2574.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=15\s+D=15.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=10\s+B=10\s+C=11\s+D=2571.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=3\s+C=12\s+D=780.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=1\s+C=13\s+D=269.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=11\s+C=14\s+D=2830.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=12\s+B=0\s+C=15\s+D=15.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=11\s+B=11\s+C=12\s+D=2828.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=1\s+C=3\s+D=259'
+        }
+        @{
+            proto = 303
+            dis = (Join-Path $outDir "attacklogic.proto303.toudongxi_log1.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=14\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=3\s+C=12\s+D=780.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=12\s+C=13\s+D=3085.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=15\s+C=14\s+D=3854.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=0\s+C=17\s+D=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=15\s+B=15\s+C=16\s+D=3856.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=13\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=3\s+C=12\s+D=780.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=12\s+C=13\s+D=3085.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=16\s+C=14\s+D=4110.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=17\s+B=0\s+C=17\s+D=17.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=16\s+B=16\s+C=17\s+D=4113.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=13\s+B=1\s+C=3\s+D=259'
+        }
+        @{
             proto = 316
             dis = (Join-Path $outDir "attacklogic.proto316.extendtalents2_talentlog.dis.txt")
             bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=3\s+D=3.*\r?\n' +
@@ -2574,6 +2610,48 @@ function Test-AttackLogicExtendTalents2TalentLogWindows([string]$repoRootWsl, [s
                 '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=27\s+B=0\s+C=202\s+D=202.*\r?\n' +
                 '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=23\s+B=23\s+C=27\s+D=5915.*\r?\n' +
                 '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=20\s+B=1\s+C=3\s+D=259'
+        }
+        @{
+            proto = 320
+            dis = (Join-Path $outDir "attacklogic.proto320.extendtalents2_log_line6440.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=12\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=12\s+B=12\s+C=4\s+D=3076.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=13\s+B=0\s+C=86\s+D=86.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=0\s+C=27\s+D=27.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=14\s+C=4\s+D=3588.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=15\s+B=0\s+C=87\s+D=87.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=12\s+B=12\s+C=15\s+D=3087.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=13\s+C=4\s+D=3332.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=14\s+B=0\s+C=86\s+D=86.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=0\s+C=27\s+D=27.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=15\s+C=4\s+D=3844.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=0\s+C=87\s+D=87.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=13\s+B=13\s+C=16\s+D=3344.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+        }
+        @{
+            proto = 320
+            dis = (Join-Path $outDir "attacklogic.proto320.extendtalents2_log_line6562.dis.txt")
+            bad = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=18\s+C=4\s+D=4612.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=19\s+B=0\s+C=134\s+D=134.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=18\s+B=18\s+C=19\s+D=4627.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
+            good = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=0\s+C=3\s+D=3.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=3\s+C=26\s+D=794.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=1\s+C=27\s+D=283.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=19\s+C=4\s+D=4868.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=20\s+B=0\s+C=134\s+D=134.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=19\s+B=19\s+C=20\s+D=4884.*\r?\n' +
+                '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
         }
     )
 

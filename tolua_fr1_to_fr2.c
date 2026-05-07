@@ -5720,6 +5720,50 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
                        "apply proto19 RegisterPrevRole GetAddMaxMp self/arg fix A12/A13 -> A13/A14");
       break;
     }
+
+    /* proto19 BATTLE_BeforeInitBattle/RegisterPrevRole helpChangeAttribute
+       method window observed after conversion:
+         CALL A15 C1; MOV A16<-A15; TGETS A15 B=15 C=171; TGETS A17 B=2 C=160;
+         KSTR A18 D=169; MOV A19<-A11; CALL A15 B1 C5
+       Native GC64 keeps the method self/arg chain on A17..A20, leaving A16
+       as the FR2 hole after the function slot. */
+    for (p = 6; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6);
+      int status;
+
+      if (cop != BC_CALL || bc_a(c) != 15 || bc_b(c) != 1 || bc_c(c) != 5) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 19 || bc_d(i1) != 11) continue;
+      if (o2 != BC_KSTR || bc_a(i2) != 18 || bc_d(i2) != 169) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != 17 || bc_b(i3) != 2 || bc_c(i3) != 160 || bc_d(i3) != 672) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != 15 || bc_b(i4) != 15 || bc_c(i4) != 171 || bc_d(i4) != 4011) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 16 || bc_d(i5) != 15) continue;
+      if (o6 != BC_CALL || bc_a(i6) != 15 || bc_b(i6) != 2 || bc_c(i6) != 1 || bc_d(i6) != 513) continue;
+
+      setbc_a(&i5, 17);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      setbc_a(&i3, 18);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      setbc_a(&i2, 19);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      setbc_a(&i1, 20);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+      status = tolua_update_framesize_checked(framesize_io, 20, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto19 RegisterPrevRole helpChangeAttribute self/arg fix A16..A19 -> A17..A20");
+      break;
+    }
   }
 
   /* proto112 GameEngine_jianghuContent math.max(unpack({...})) direct call

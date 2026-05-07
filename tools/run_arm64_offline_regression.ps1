@@ -323,7 +323,7 @@ function Test-BattleBeforeInitBattleGetAddMaxMpShape([string]$repoRootWsl, [stri
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 19 1299 1303 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 19 1299 1342 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
@@ -353,7 +353,14 @@ function Test-BattleBeforeInitBattleGetAddMaxMpShape([string]$repoRootWsl, [stri
         @{ pc = 1300; op = "MOV";   a = 13; b = 0;  c = 11;  d = 11;   tag = "pc1300" },
         @{ pc = 1301; op = "TGETS"; a = 11; b = 11; c = 166; d = 2982; tag = "pc1301" },
         @{ pc = 1302; op = "TGETS"; a = 14; b = 2;  c = 160; d = 672;  tag = "pc1302" },
-        @{ pc = 1303; op = "CALL";  a = 11; b = 2;  c = 3;   d = 515;  tag = "pc1303" }
+        @{ pc = 1303; op = "CALL";  a = 11; b = 2;  c = 3;   d = 515;  tag = "pc1303" },
+        @{ pc = 1336; op = "CALL";  a = 15; b = 2;  c = 1;   d = 513;  tag = "pc1336" },
+        @{ pc = 1337; op = "MOV";   a = 17; b = 0;  c = 15;  d = 15;   tag = "pc1337" },
+        @{ pc = 1338; op = "TGETS"; a = 15; b = 15; c = 171; d = 4011; tag = "pc1338" },
+        @{ pc = 1339; op = "TGETS"; a = 18; b = 2;  c = 160; d = 672;  tag = "pc1339" },
+        @{ pc = 1340; op = "KSTR";  a = 19; b = 0;  c = 169; d = 169;  tag = "pc1340" },
+        @{ pc = 1341; op = "MOV";   a = 20; b = 0;  c = 11;  d = 11;   tag = "pc1341" },
+        @{ pc = 1342; op = "CALL";  a = 15; b = 1;  c = 5;   d = 261;  tag = "pc1342" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]

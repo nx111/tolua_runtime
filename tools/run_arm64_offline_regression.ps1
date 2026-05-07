@@ -1050,13 +1050,14 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
         "cd '$repoRootWsl'",
         "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 655 664 > '$disWsl'",
         "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1174 1183 >> '$disWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1200 1207 >> '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 132 1200 1207 >> '$disWsl'",
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 193 40 49 >> '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto132 655..664 or 1174..1183 or 1200..1207 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto132 655..664 or 1174..1183 or 1200..1207 or proto193 40..49 failed exit=$code")
         }
     }
 
@@ -1093,7 +1094,17 @@ function Test-BattleBeforeRoleActionLogShape([string]$repoRootWsl, [string]$byte
         @{ pc = 1200; op = "MOV";   a = 9;  b = 0; c = 0;  d = 0;    tag = "pc1200" },
         @{ pc = 1201; op = "TGETS"; a = 7;  b = 0; c = 57; d = 57;   tag = "pc1201" },
         @{ pc = 1206; op = "CAT";   a = 10; b = 10; c = 12; d = 2572; tag = "pc1206" },
-        @{ pc = 1207; op = "CALL";  a = 7;  b = 1; c = 3;  d = 259;  tag = "pc1207" }
+        @{ pc = 1207; op = "CALL";  a = 7;  b = 1; c = 3;  d = 259;  tag = "pc1207" },
+        @{ pc = 40;   op = "MOV";   a = 6;  b = 0; c = 0;  d = 0;    tag = "proto193_pc40" },
+        @{ pc = 41;   op = "TGETS"; a = 4;  b = 0; c = 9;  d = 9;    tag = "proto193_pc41" },
+        @{ pc = 42;   op = "KSTR";  a = 7;  b = 0; c = 10; d = 10;   tag = "proto193_pc42" },
+        @{ pc = 43;   op = "TGETS"; a = 8;  b = 1; c = 11; d = 267;  tag = "proto193_pc43" },
+        @{ pc = 44;   op = "TGETS"; a = 8;  b = 8; c = 12; d = 2060; tag = "proto193_pc44" },
+        @{ pc = 45;   op = "KSTR";  a = 9;  b = 0; c = 13; d = 13;   tag = "proto193_pc45" },
+        @{ pc = 46;   op = "MOV";   a = 10; b = 0; c = 3;  d = 3;    tag = "proto193_pc46" },
+        @{ pc = 47;   op = "KSTR";  a = 11; b = 0; c = 14; d = 14;   tag = "proto193_pc47" },
+        @{ pc = 48;   op = "CAT";   a = 7;  b = 7; c = 11; d = 1803; tag = "proto193_pc48" },
+        @{ pc = 49;   op = "CALL";  a = 4;  b = 1; c = 3;  d = 259;  tag = "proto193_pc49" }
     )
 
     $fails = New-Object System.Collections.Generic.List[string]
@@ -1762,13 +1773,13 @@ function Test-GameEngineJianghuContentUnpackWindow([string]$repoRootWsl, [string
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 112 189 201 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 112 188 201 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto112 189..201 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto112 188..201 failed exit=$code")
         }
     }
 
@@ -1788,18 +1799,19 @@ function Test-GameEngineJianghuContentUnpackWindow([string]$repoRootWsl, [string
     }
 
     $checks = @(
-        @{ pc = 189; op = "TNEW";  a = 7;  b = 0;  c = 3;  d = 3;    tag = "pc189" },
-        @{ pc = 190; op = "UGET";  a = 8;  b = 0;  c = 0;  d = 0;    tag = "pc190" },
-        @{ pc = 191; op = "TGETS"; a = 8;  b = 8;  c = 5;  d = 2053; tag = "pc191" },
-        @{ pc = 192; op = "TGETS"; a = 8;  b = 8;  c = 20; d = 2068; tag = "pc192" },
-        @{ pc = 193; op = "TSETB"; a = 8;  b = 7;  c = 1;  d = 1793; tag = "pc193" },
-        @{ pc = 194; op = "UGET";  a = 8;  b = 0;  c = 2;  d = 2;    tag = "pc194" },
-        @{ pc = 195; op = "TGETS"; a = 8;  b = 8;  c = 44; d = 2092; tag = "pc195" },
-        @{ pc = 196; op = "UGET";  a = 10; b = 0;  c = 2;  d = 2;    tag = "pc196" },
-        @{ pc = 197; op = "TGETS"; a = 10; b = 10; c = 59; d = 2619; tag = "pc197" },
-        @{ pc = 198; op = "CALL";  a = 8;  b = 0;  c = 2;  d = 2;    tag = "pc198" },
-        @{ pc = 199; op = "TSETM"; a = 8;  b = 0;  c = 0;  d = 0;    tag = "pc199" },
-        @{ pc = 200; op = "CALL";  a = 5;  b = 0;  c = 2;  d = 2;    tag = "pc200" },
+        @{ pc = 188; op = "GGET";  a = 6;  b = 0;  c = 58; d = 58;   tag = "pc188" },
+        @{ pc = 189; op = "TNEW";  a = 8;  b = 0;  c = 3;  d = 3;    tag = "pc189" },
+        @{ pc = 190; op = "UGET";  a = 9;  b = 0;  c = 0;  d = 0;    tag = "pc190" },
+        @{ pc = 191; op = "TGETS"; a = 9;  b = 9;  c = 5;  d = 2309; tag = "pc191" },
+        @{ pc = 192; op = "TGETS"; a = 9;  b = 9;  c = 20; d = 2324; tag = "pc192" },
+        @{ pc = 193; op = "TSETB"; a = 9;  b = 8;  c = 1;  d = 2049; tag = "pc193" },
+        @{ pc = 194; op = "UGET";  a = 9;  b = 0;  c = 2;  d = 2;    tag = "pc194" },
+        @{ pc = 195; op = "TGETS"; a = 9;  b = 9;  c = 44; d = 2348; tag = "pc195" },
+        @{ pc = 196; op = "UGET";  a = 11; b = 0;  c = 2;  d = 2;    tag = "pc196" },
+        @{ pc = 197; op = "TGETS"; a = 11; b = 11; c = 59; d = 2875; tag = "pc197" },
+        @{ pc = 198; op = "CALL";  a = 9;  b = 0;  c = 2;  d = 2;    tag = "pc198" },
+        @{ pc = 199; op = "TSETM"; a = 9;  b = 0;  c = 0;  d = 0;    tag = "pc199" },
+        @{ pc = 200; op = "CALL";  a = 6;  b = 0;  c = 2;  d = 2;    tag = "pc200" },
         @{ pc = 201; op = "CALLM"; a = 4;  b = 2;  c = 0;  d = 512;  tag = "pc201" }
     )
 

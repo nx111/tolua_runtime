@@ -9623,6 +9623,72 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
+  /* proto320 two-arg math.max windows observed around the "滑稽之魂"
+     branches after conversion:
+       GGET A18/19 D=44; TGETS A18/19 B=A C=45; TGETS A19/20 C=114;
+       UGET A20/21; TGETS A20/21 B=A C=0; TGETS A20/21 B=A C=128;
+       MULNV A20/21 C=20; ADDNV A20/21 C=21; CALL A18/19 B2 C3
+     Native GC64 keeps the two direct-call arguments one slot to the right of
+     the function register, so the argument carriers must move from A+1/A+2 to
+     A+2/A+3. This covers both sibling windows for the two "滑稽之魂" paths. */
+  if (ctx != NULL && ctx->proto_index == 320u) {
+    uint32_t p = 0;
+    for (p = 8; p < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCOp cop = bc_op(c), o1 = bc_op(i1), o2 = bc_op(i2), o3 = bc_op(i3), o4 = bc_op(i4);
+      BCOp o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7), o8 = bc_op(i8);
+      BCReg f = bc_a(c);
+      BCReg old_first, old_last, new_first;
+      int status;
+
+      if (cop != BC_CALL || bc_b(c) != 2 || bc_c(c) != 3) continue;
+      if (f != 18 && f != 19) continue;
+
+      if (o1 != BC_ADDNV || bc_a(i1) != f + 2 || bc_b(i1) != f + 2 || bc_c(i1) != 21) continue;
+      if (o2 != BC_MULNV || bc_a(i2) != f + 2 || bc_b(i2) != f + 2 || bc_c(i2) != 20) continue;
+      if (o3 != BC_TGETS || bc_a(i3) != f + 2 || bc_b(i3) != f + 2 || bc_c(i3) != 128) continue;
+      if (o4 != BC_TGETS || bc_a(i4) != f + 2 || bc_b(i4) != f + 2 || bc_c(i4) != 0) continue;
+      if (o5 != BC_UGET || bc_a(i5) != f + 2 || bc_b(i5) != 0 || bc_c(i5) != 0) continue;
+      if (o6 != BC_TGETS || bc_a(i6) != f + 1 || bc_c(i6) != 114) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != f || bc_b(i7) != f || bc_c(i7) != 45) continue;
+      if (o8 != BC_GGET || bc_a(i8) != f || bc_d(i8) != 44) continue;
+
+      old_first = f + 1;
+      old_last = f + 2;
+      new_first = f + 2;
+
+      tolua_repack_remap_reg_range(&i6, o6, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 6) * 4, (uint32_t)i6, be);
+      tolua_repack_remap_reg_range(&i5, o5, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 5) * 4, (uint32_t)i5, be);
+      tolua_repack_remap_reg_range(&i4, o4, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 4) * 4, (uint32_t)i4, be);
+      tolua_repack_remap_reg_range(&i3, o3, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 3) * 4, (uint32_t)i3, be);
+      tolua_repack_remap_reg_range(&i2, o2, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 2) * 4, (uint32_t)i2, be);
+      tolua_repack_remap_reg_range(&i1, o1, old_first, old_last, new_first);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, (BCReg)(f + 4), ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto320 huaji math.max arg fix A+1/A+2 -> A+2/A+3");
+    }
+  }
+
   /* proto320 extendTalents2 bf.Log window observed on the converted chunk:
        MOV A21 <- A3; TGETS A20 B=3 C=26 D=794; KSTR A22 D=200;
        TGETS A23 B=1 C=27 D=283; TGETS A23 B=23 C=4 D=5892;

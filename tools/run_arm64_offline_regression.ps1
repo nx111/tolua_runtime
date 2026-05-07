@@ -3205,6 +3205,42 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=22\s+B=0\s+C=133\s+D=133.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=19\s+B=19\s+C=22\s+D=4886.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
+    $badPattern6a = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=18\s+B=0\s+C=44\s+D=44.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=18\s+C=45\s+D=4653.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=0\s+C=114\s+D=114.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=20\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=20\s+C=0\s+D=5120.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=20\s+C=128\s+D=5248.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=20\s+B=20\s+C=20\s+D=5140.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+ADDNV\s+A=20\s+B=20\s+C=21\s+D=5141.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=18\s+B=2\s+C=3\s+D=515'
+    $goodPattern6a = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=18\s+B=0\s+C=44\s+D=44.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=18\s+C=45\s+D=4653.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=0\s+C=114\s+D=114.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=21\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=21\s+C=0\s+D=5376.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=21\s+C=128\s+D=5504.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=21\s+B=21\s+C=20\s+D=5396.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+ADDNV\s+A=21\s+B=21\s+C=21\s+D=5397.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=18\s+B=2\s+C=3\s+D=515'
+    $badPattern6b = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=19\s+B=0\s+C=44\s+D=44.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=19\s+C=45\s+D=4909.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=20\s+B=1\s+C=114\s+D=370.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=21\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=21\s+C=0\s+D=5376.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=21\s+C=128\s+D=5504.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=21\s+B=21\s+C=20\s+D=5396.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+ADDNV\s+A=21\s+B=21\s+C=21\s+D=5397.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=19\s+B=2\s+C=3\s+D=515'
+    $goodPattern6b = '(?ms)^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=19\s+B=0\s+C=44\s+D=44.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=19\s+C=45\s+D=4909.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=1\s+C=114\s+D=370.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+UGET\s+A=22\s+B=0\s+C=0\s+D=0.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=22\s+B=22\s+C=0\s+D=5632.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=22\s+B=22\s+C=128\s+D=5760.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MULNV\s+A=22\s+B=22\s+C=20\s+D=5652.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+ADDNV\s+A=22\s+B=22\s+C=21\s+D=5653.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=19\s+B=2\s+C=3\s+D=515'
     $badCount0a = [regex]::Matches($disText, $badPattern0a).Count
     $goodCount0a = [regex]::Matches($disText, $goodPattern0a).Count
     $badCount0b = [regex]::Matches($disText, $badPattern0b).Count
@@ -3219,6 +3255,10 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
     $goodCount4 = [regex]::Matches($disText, $goodPattern4).Count
     $badCount5 = [regex]::Matches($disText, $badPattern5).Count
     $goodCount5 = [regex]::Matches($disText, $goodPattern5).Count
+    $badCount6a = [regex]::Matches($disText, $badPattern6a).Count
+    $goodCount6a = [regex]::Matches($disText, $goodPattern6a).Count
+    $badCount6b = [regex]::Matches($disText, $badPattern6b).Count
+    $goodCount6b = [regex]::Matches($disText, $goodPattern6b).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badCount0a -ne 0) {
@@ -3262,6 +3302,18 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
     }
     if ($goodCount5 -eq 0) {
         $fails.Add("missing corrected proto320 extendtalents2 bf.Log window line6555")
+    }
+    if ($badCount6a -ne 0) {
+        $fails.Add("residual bad proto320 extendtalents2 huaji math.max window #1")
+    }
+    if ($goodCount6a -eq 0) {
+        $fails.Add("missing corrected proto320 extendtalents2 huaji math.max window #1")
+    }
+    if ($badCount6b -ne 0) {
+        $fails.Add("residual bad proto320 extendtalents2 huaji math.max window #2")
+    }
+    if ($goodCount6b -eq 0) {
+        $fails.Add("missing corrected proto320 extendtalents2 huaji math.max window #2")
     }
 
     return [pscustomobject]@{

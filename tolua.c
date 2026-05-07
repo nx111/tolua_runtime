@@ -57,7 +57,7 @@ static int tag = 0;
 static int gettag = 0;
 static int settag = 0;
 static int vptr = 1;
-static const char *tolua_bytecode_build_tag = "arm64fr2-20260507-extendtalents2-shenshui";
+static const char *tolua_bytecode_build_tag = "arm64fr2-20260507-extendtalents2-jiuyang-log";
 
 #if defined(__ANDROID__)
 __attribute__((constructor)) static void tolua_bytecode_android_ctor(void)
@@ -104,6 +104,7 @@ static uint32_t tolua_read_ins_local(const uint8_t *buf, int be)
 	       ((uint32_t)buf[2] << 16) |
 	       ((uint32_t)buf[3] << 24);
 }
+#endif
 
 LUALIB_API int tolua_isgc64enabled(void)
 {

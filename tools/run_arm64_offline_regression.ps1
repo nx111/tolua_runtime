@@ -3187,6 +3187,24 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
         '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=18\s+B=0\s+C=79\s+D=79.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=16\s+B=16\s+C=18\s+D=4114.*\r?\n' +
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=13\s+B=1\s+C=3\s+D=259'
+    $badPattern5 = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=18\s+C=4\s+D=4612.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=19\s+B=0\s+C=132\s+D=132.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=21\s+B=0\s+C=133\s+D=133.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=18\s+B=18\s+C=21\s+D=4629.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
+    $goodPattern5 = '(?ms)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=18\s+B=0\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=16\s+B=3\s+C=26\s+D=794.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=1\s+C=27\s+D=283.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=19\s+B=19\s+C=4\s+D=4868.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=20\s+B=0\s+C=132\s+D=132.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=21\s+B=0\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=22\s+B=0\s+C=133\s+D=133.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=19\s+B=19\s+C=22\s+D=4886.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=16\s+B=1\s+C=3\s+D=259'
     $badCount0a = [regex]::Matches($disText, $badPattern0a).Count
     $goodCount0a = [regex]::Matches($disText, $goodPattern0a).Count
     $badCount0b = [regex]::Matches($disText, $badPattern0b).Count
@@ -3199,6 +3217,8 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
     $goodCount3 = [regex]::Matches($disText, $goodPattern3).Count
     $badCount4 = [regex]::Matches($disText, $badPattern4).Count
     $goodCount4 = [regex]::Matches($disText, $goodPattern4).Count
+    $badCount5 = [regex]::Matches($disText, $badPattern5).Count
+    $goodCount5 = [regex]::Matches($disText, $goodPattern5).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badCount0a -ne 0) {
@@ -3236,6 +3256,12 @@ function Test-AttackLogicExtendTalents2YihuaLogWindows([string]$repoRootWsl, [st
     }
     if ($goodCount4 -eq 0) {
         $fails.Add("missing corrected proto320 extendtalents2 bf.Log window line6481/6487")
+    }
+    if ($badCount5 -ne 0) {
+        $fails.Add("residual bad proto320 extendtalents2 bf.Log window line6555")
+    }
+    if ($goodCount5 -eq 0) {
+        $fails.Add("missing corrected proto320 extendtalents2 bf.Log window line6555")
     }
 
     return [pscustomobject]@{

@@ -1,0 +1,10 @@
+run failed: tmp.lua:26986: attempt to concatenate a table value
+stack traceback:
+	tmp.lua:26986: in main chunk
+@bcrun_attacklogic_extendtalents2_realdmglog failed: bcrun_attacklogic_extendtalents2_realdmglog:436: extendtalents2 err=bcrun_attacklogic_extendtalents2_realdmglog:157: bf.Log self=nil
+stack traceback:
+	[C]: in function 'assert'
+	bcrun_attacklogic_extendtalents2_realdmglog:157: in function 'Log'
+	tmp.lua:6350: in function <tmp.lua:6274>
+	[C]: in function 'xpcall'
+	bcrun_attacklogic_extendtalents2_realdmglog:388: in main chunk

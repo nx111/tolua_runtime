@@ -1,0 +1,10 @@
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+0297 line=2810 GGET   A=6 B=0 C=66 D=66 raw=0x00420636 op_raw=54 op=54
+0298 line=2810 TGETS  A=6 B=6 C=67 D=1603 raw=0x06430639 op_raw=57 op=57
+0299 line=2810 SUBNV  A=8 B=5 C=3 D=1283 raw=0x0503081c op_raw=28 op=28
+0300 line=2810 TGETS  A=9 B=4 C=68 D=1092 raw=0x04440939 op_raw=57 op=57
+0301 line=2810 TGETS  A=9 B=9 C=69 D=2373 raw=0x09450939 op_raw=57 op=57
+0302 line=2810 IST    A=0 B=0 C=9 D=9 raw=0x0009000e op_raw=14 op=14
+0303 line=2810 JMP    A=9 B=128 C=1 D=32769 raw=0x80010958 op_raw=88 op=88
+0304 line=2811 KSHORT A=9 B=0 C=0 D=0 raw=0x00000929 op_raw=41 op=41
+0305 line=2811 CALL   A=6 B=2 C=3 D=515 raw=0x02030642 op_raw=66 op=66

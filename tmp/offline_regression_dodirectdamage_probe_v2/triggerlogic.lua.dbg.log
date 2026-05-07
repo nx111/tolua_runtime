@@ -1,0 +1,48 @@
+[repack] proto=1 pc=9 skip existing FR2 slice for CAT+FNEW callback call base=3 old=[4,6] new=[5,7]
+[repack] proto=1 pc=9 skip existing FR2 slice for CAT+FNEW callback call base=3 old=[4,6] new=[5,7]
+[repack] proto=1 pc=9 call-selfdef helper enter consumer=CALL producer=CAT self=FNEW producer_b=5 consumer_span=4 producer_c=7
+[repack] proto=1 pc=9 call-method-basecopy helper enter consumer=CALL producer=FNEW producer_b=0 consumer_span=4 producer_c=4
+[repack] proto=1 pc=9 call-chain helper enter consumer=CALL producer=FNEW producer_b=0 consumer_span=4 producer_c=4
+[repack] proto=1 pc=9 copy-fallback keep legacy-overlap reason=target-touch-fail old=[4,6] new=[5,7] base=3 nargs=3 b=1
+[repack] proto=1 pc=9 copy-fallback reason=target-touch-fail insert_pc=9 count=3 range=[4,6]->[5,7] deferred=0
+[rebuild] proto=1 insert_pc=9 old_proto_total=121 new_proto_total=134 old_payload=120 new_payload=132 debug_drop=43
+[repack] proto=1 pc=12 accept existing FR2 slice [5,7]
+[repack] proto=2 pc=14 reject existing FR2 slice: first-arg seed old=7(pc=12,TGETS) new=8(pc=13,KSTR)
+[repack] proto=3 pc=9 reject existing FR2 slice: new-first writer matches old-second old=3(pc=6,MOV) old2=4(pc=8,KSTR) new=4(pc=8,KSTR)
+[repack] proto=3 pc=20 reject existing FR2 slice: new-first writer matches old-second old=3(pc=17,MOV) old2=4(pc=19,KSTR) new=4(pc=19,KSTR)
+[repack] slice fail pc=31 unresolved reg=10 range=[9,10]
+[repack] simple-local pick pc=30 op=MOV def=9 range=[9,10]
+[repack] simple-local missing reg=10 range=[9,10]
+[repack] proto=3 pc=38 reject existing FR2 slice: new-first writer matches old-second old=9(pc=35,MOV) old2=10(pc=37,KSTR) new=10(pc=37,KSTR)
+[repack] proto=3 pc=45 reject existing FR2 slice: new-first writer matches old-second old=9(pc=42,MOV) old2=10(pc=44,KSTR) new=10(pc=44,KSTR)
+[repack] proto=3 pc=58 reject existing FR2 slice: method-self const arg new-first matches old-second old=11(pc=55,MOV src=10) old2=12(pc=57,KPRI) new=12(pc=57,KPRI)
+[repack] proto=3 pc=64 reject existing FR2 slice: method-self const arg new-first matches old-second old=11(pc=61,MOV src=10) old2=12(pc=63,KPRI) new=12(pc=63,KPRI)
+[repack] proto=3 pc=80 reject existing FR2 slice: first-arg seed old=2(pc=78,TGETS) new=3(pc=79,KSTR)
+[repack] slice fail pc=86 target-at=74 range=[4,5]
+[repack] simple-local pick pc=85 op=TGETB def=4 range=[4,5]
+[repack] simple-local pick pc=26 op=KSHORT def=5 range=[4,5]
+[repack] proto=3 pc=86 accept existing FR2 slice [4,5]
+[repack] proto=3 pc=112 reject existing FR2 slice: new-first writer matches old-second old=2(pc=109,MOV) old2=3(pc=111,KSTR) new=3(pc=111,KSTR)
+[repack] proto=3 pc=127 reject existing FR2 slice: new-first writer matches old-second old=3(pc=124,MOV) old2=4(pc=126,KSTR) new=4(pc=126,KSTR)
+[repack] slice fail pc=185 unresolved reg=16 range=[15,16]
+[repack] simple-local pick pc=184 op=MOV def=15 range=[15,16]
+[repack] simple-local missing reg=16 range=[15,16]
+[repack] slice fail pc=228 target-at=225 range=[15,16]
+[repack] simple-local pick pc=227 op=MOV def=15 range=[15,16]
+[repack] simple-local pick pc=189 op=MOV def=16 range=[15,16]
+[repack] proto=3 pc=228 accept existing FR2 slice [15,16]
+[repack] proto=3 pc=281 reject existing FR2 slice: new-first writer matches old-second old=3(pc=278,MOV) old2=4(pc=280,KSTR) new=4(pc=280,KSTR)
+[repack] slice fail pc=297 interference-at=266 op=ITERL reg=8 range=[7,8]
+[repack] simple-local pick pc=296 op=MOV def=7 range=[7,8]
+[repack] simple-local pick pc=204 op=TGETV def=8 range=[7,8]
+[repack] proto=3 pc=297 accept existing FR2 slice [7,8]
+[repack] slice fail pc=310 target-at=305 range=[12,13]
+[repack] simple-local pick pc=309 op=TGETV def=12 range=[12,13]
+[repack] simple-local pick pc=226 op=TGETS def=13 range=[12,13]
+[repack] simple-local reject pc=310 reg=13 nearest=228(CALL) not-selected range=[12,13]
+[repack] proto=3 pc=369 reject existing FR2 slice: first-arg seed old=2(pc=367,TGETS) new=3(pc=368,KSTR)
+[repack] slice fail pc=389 target-at=379 range=[12,13]
+[repack] simple-local pick pc=388 op=MOV def=12 range=[12,13]
+[repack] simple-local pick pc=309 op=TGETV def=13 range=[12,13]
+[repack] proto=3 pc=389 accept existing FR2 slice [12,13]
+converted /mnt/d/Games/work/jygame_renew/gamedata/modcache/SSWS_HG/lua/luajit/triggerlogic.lua -> /mnt/d/Games/work/tolua_runtime/tmp/offline_regression_dodirectdamage_probe_v2/triggerlogic.lua.fr2.bin (5266 -> 5279 bytes, target_fr2=1)

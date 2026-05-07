@@ -1,0 +1,116 @@
+rm -f luajit libluajit.a libluajit.so host/minilua host/buildvm lj_vm.S lj_bcdef.h lj_ffdef.h lj_libdef.h lj_recdef.h lj_folddef.h host/buildvm_arch.h jit/vmdef.lua *.o host/*.o *.obj *.lib *.exp *.dll *.exe *.manifest *.pdb *.ilk
+HOSTCC    host/minilua.o
+HOSTCC    host/buildvm_asm.o
+HOSTCC    host/buildvm_peobj.o
+HOSTCC    host/buildvm_lib.o
+HOSTCC    host/buildvm_fold.o
+CC        lj_gc.o
+CC        lj_char.o
+CC        lj_obj.o
+CC        lj_buf.o
+CC        lj_str.o
+CC        lj_tab.o
+CC        lj_func.o
+CC        lj_udata.o
+CC        lj_meta.o
+CC        lj_debug.o
+CC        lj_state.o
+CC        lj_vmevent.o
+CC        lj_vmmath.o
+CC        lj_strscan.o
+CC        lj_strfmt.o
+CC        lj_strfmt_num.o
+CC        lj_api.o
+CC        lj_profile.o
+CC        lj_lex.o
+CC        lj_parse.o
+CC        lj_bcread.o
+CC        lj_bcwrite.o
+CC        lj_load.o
+CC        lj_ir.o
+CC        lj_opt_mem.o
+CC        lj_opt_narrow.o
+CC        lj_opt_dce.o
+CC        lj_opt_loop.o
+CC        lj_opt_split.o
+CC        lj_opt_sink.o
+CC        lj_mcode.o
+CC        lj_snap.o
+CC        lj_asm.o
+CC        lj_trace.o
+CC        lj_gdbjit.o
+CC        lj_ctype.o
+CC        lj_cdata.o
+CC        lj_cconv.o
+CC        lj_ccall.o
+CC        lj_ccallback.o
+CC        lj_carith.o
+CC        lj_clib.o
+CC        lj_cparse.o
+CC        lj_lib.o
+CC        lj_alloc.o
+CC        lib_aux.o
+CC        lib_package.o
+CC        lib_init.o
+CC        luajit.o
+HOSTLINK  host/minilua
+DYNASM    host/buildvm_arch.h
+HOSTCC    host/buildvm.o
+HOSTLINK  host/buildvm
+BUILDVM   lj_vm.S
+BUILDVM   lj_ffdef.h
+BUILDVM   lj_bcdef.h
+BUILDVM   lj_folddef.h
+BUILDVM   lj_recdef.h
+BUILDVM   lj_libdef.h
+BUILDVM   jit/vmdef.lua
+ASM       lj_vm.o
+CC        lj_err.o
+CC        lj_bc.o
+CC        lj_dispatch.o
+CC        lj_record.o
+CC        lj_crecord.o
+CC        lj_ffrecord.o
+CC        lib_base.o
+CC        lib_math.o
+CC        lib_bit.o
+CC        lib_string.o
+CC        lib_table.o
+CC        lib_io.o
+CC        lib_os.o
+CC        lib_debug.o
+CC        lib_jit.o
+CC        lib_ffi.o
+CC        lj_opt_fold.o
+AR        libluajit.a
+DYNLINK   libluajit.so
+LINK      luajit
+OK        Successfully built LuaJIT
+[arm64-v8a] Clean          : luajit [arm64-v8a]
+[arm64-v8a] Clean          : stdc++ [arm64-v8a]
+[arm64-v8a] Clean          : tolua [arm64-v8a]
+[arm64-v8a] Compile        : tolua <= tolua.c
+[arm64-v8a] Compile        : tolua <= tolua_fr1_to_fr2.c
+[arm64-v8a] Compile        : tolua <= int64.c
+[arm64-v8a] Compile        : tolua <= uint64.c
+[arm64-v8a] Compile        : tolua <= pb.c
+[arm64-v8a] Compile        : tolua <= lpeg.c
+[arm64-v8a] Compile        : tolua <= struct.c
+[arm64-v8a] Compile        : tolua <= strbuf.c
+[arm64-v8a] Compile        : tolua <= lua_cjson.c
+[arm64-v8a] Compile        : tolua <= fpconv.c
+[arm64-v8a] Compile        : tolua <= auxiliar.c
+[arm64-v8a] Compile        : tolua <= buffer.c
+[arm64-v8a] Compile        : tolua <= except.c
+[arm64-v8a] Compile        : tolua <= inet.c
+[arm64-v8a] Compile        : tolua <= io.c
+[arm64-v8a] Compile        : tolua <= luasocket.c
+[arm64-v8a] Compile        : tolua <= mime.c
+[arm64-v8a] Compile        : tolua <= options.c
+[arm64-v8a] Compile        : tolua <= select.c
+[arm64-v8a] Compile        : tolua <= tcp.c
+[arm64-v8a] Compile        : tolua <= timeout.c
+[arm64-v8a] Compile        : tolua <= udp.c
+[arm64-v8a] Compile        : tolua <= usocket.c
+[arm64-v8a] SharedLibrary  : libtolua.so
+[arm64-v8a] Install        : libtolua.so => libs/arm64-v8a/libtolua.so

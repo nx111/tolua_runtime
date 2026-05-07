@@ -1,0 +1,7 @@
+proto=0 numbc=6 framesize=5 params=1 uv=1 pflags=0x00 dbg=26 lines=43-43
+0000 GGET   A=1 B=0 C=0 D=0 raw=0x00000136 op_raw=54 op=54
+0001 TGETS  A=1 B=1 C=1 D=257 raw=0x01010139 op_raw=57 op=57
+0002 UGET   A=3 B=0 C=0 D=0 raw=0x0000032d op_raw=45 op=45
+0003 MOV    A=4 B=0 C=0 D=0 raw=0x00000412 op_raw=18 op=18
+0004 CALL   A=1 B=1 C=3 D=259 raw=0x01030142 op_raw=66 op=66
+0005 RET0   A=0 B=0 C=1 D=1 raw=0x0001004b op_raw=75 op=75

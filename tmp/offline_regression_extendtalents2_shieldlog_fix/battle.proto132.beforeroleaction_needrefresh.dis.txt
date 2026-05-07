@@ -1,0 +1,8 @@
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+0647 line=2915 MOV    A=9 B=0 C=1 D=1 raw=0x00010912 op_raw=18 op=18
+0648 line=2915 TGETS  A=7 B=1 C=116 D=372 raw=0x01740739 op_raw=57 op=57
+0649 line=2915 CALL   A=7 B=1 C=2 D=258 raw=0x01020742 op_raw=66 op=66
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+0875 line=2986 MOV    A=18 B=0 C=1 D=1 raw=0x00011212 op_raw=18 op=18
+0876 line=2986 TGETS  A=16 B=1 C=116 D=372 raw=0x01741039 op_raw=57 op=57
+0877 line=2986 CALL   A=16 B=1 C=2 D=258 raw=0x01021042 op_raw=66 op=66

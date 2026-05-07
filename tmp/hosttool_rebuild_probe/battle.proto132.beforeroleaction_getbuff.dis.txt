@@ -1,0 +1,5 @@
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+1151 line=3024 MOV    A=17 B=0 C=1 D=1 raw=0x00011112 op_raw=18 op=18
+1152 line=3036 TGETS  A=15 B=1 C=105 D=361 raw=0x01690f39 op_raw=57 op=57
+1153 line=3036 MOV    A=18 B=0 C=14 D=14 raw=0x000e1212 op_raw=18 op=18
+1154 line=3037 CALL   A=15 B=2 C=3 D=515 raw=0x02030f42 op_raw=66 op=66

@@ -1,0 +1,12 @@
+proto=3 numbc=490 framesize=17 params=1 uv=8 pflags=0x01 dbg=1041 lines=35-205
+0054 line=49 TGETS  A=10 B=7 C=13 D=1805 raw=0x070d0a39 op_raw=57 op=57
+0055 line=49 MOV    A=12 B=0 C=10 D=10 raw=0x000a0c12 op_raw=18 op=18
+0056 line=49 TGETS  A=10 B=10 C=19 D=2579 raw=0x0a130a39 op_raw=57 op=57
+0057 line=49 KPRI   A=13 B=0 C=1 D=1 raw=0x00010d2b op_raw=43 op=43
+0058 line=49 CALL   A=10 B=1 C=3 D=259 raw=0x01030a42 op_raw=66 op=66
+0059 line=49 JMP    A=10 B=128 C=5 D=32773 raw=0x80050a58 op_raw=88 op=88
+0060 line=51 TGETS  A=10 B=7 C=13 D=1805 raw=0x070d0a39 op_raw=57 op=57
+0061 line=51 MOV    A=12 B=0 C=10 D=10 raw=0x000a0c12 op_raw=18 op=18
+0062 line=51 TGETS  A=10 B=10 C=19 D=2579 raw=0x0a130a39 op_raw=57 op=57
+0063 line=51 KPRI   A=13 B=0 C=2 D=2 raw=0x00020d2b op_raw=43 op=43
+0064 line=51 CALL   A=10 B=1 C=3 D=259 raw=0x01030a42 op_raw=66 op=66

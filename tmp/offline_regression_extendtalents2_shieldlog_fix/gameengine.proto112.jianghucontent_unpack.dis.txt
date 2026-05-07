@@ -1,0 +1,15 @@
+proto=112 numbc=1033 framesize=12 params=1 uv=3 pflags=0x00 dbg=1087 lines=2812-2951
+0188 line=2838 GGET   A=6 B=0 C=58 D=58 raw=0x003a0636 op_raw=54 op=54
+0189 line=2838 TNEW   A=8 B=0 C=3 D=3 raw=0x00030834 op_raw=52 op=52
+0190 line=2838 UGET   A=9 B=0 C=0 D=0 raw=0x0000092d op_raw=45 op=45
+0191 line=2838 TGETS  A=9 B=9 C=5 D=2309 raw=0x09050939 op_raw=57 op=57
+0192 line=2838 TGETS  A=9 B=9 C=20 D=2324 raw=0x09140939 op_raw=57 op=57
+0193 line=2838 TSETB  A=9 B=8 C=1 D=2049 raw=0x0801093e op_raw=62 op=62
+0194 line=2838 UGET   A=9 B=0 C=2 D=2 raw=0x0002092d op_raw=45 op=45
+0195 line=2838 TGETS  A=9 B=9 C=44 D=2348 raw=0x092c0939 op_raw=57 op=57
+0196 line=2838 UGET   A=11 B=0 C=2 D=2 raw=0x00020b2d op_raw=45 op=45
+0197 line=2838 TGETS  A=11 B=11 C=59 D=2875 raw=0x0b3b0b39 op_raw=57 op=57
+0198 line=2838 CALL   A=9 B=0 C=2 D=2 raw=0x00020942 op_raw=66 op=66
+0199 line=2838 TSETM  A=9 B=0 C=0 D=0 raw=0x0000093f op_raw=63 op=63
+0200 line=2838 CALL   A=6 B=0 C=2 D=2 raw=0x00020642 op_raw=66 op=66
+0201 line=2838 CALLM  A=4 B=2 C=0 D=512 raw=0x02000441 op_raw=65 op=65

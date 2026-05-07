@@ -1,0 +1,8 @@
+proto=6 numbc=48 framesize=17 params=5 uv=1 pflags=0x00 dbg=158 lines=108-123
+0035 line=121 GGET   A=12 B=0 C=7 D=7 raw=0x00070c36 op_raw=54 op=54
+0036 line=121 TGETS  A=12 B=12 C=8 D=3080 raw=0x0c080c39 op_raw=57 op=57
+0037 line=121 TGETV  A=14 B=6 C=11 D=1547 raw=0x060b0e38 op_raw=56 op=56
+0038 line=121 TDUP   A=15 B=0 C=9 D=9 raw=0x00090f35 op_raw=53 op=53
+0039 line=121 TSETS  A=2 B=15 C=10 D=3850 raw=0x0f0a023d op_raw=61 op=61
+0040 line=121 TSETS  A=3 B=15 C=11 D=3851 raw=0x0f0b033d op_raw=61 op=61
+0041 line=121 CALL   A=12 B=1 C=3 D=259 raw=0x01030c42 op_raw=66 op=66

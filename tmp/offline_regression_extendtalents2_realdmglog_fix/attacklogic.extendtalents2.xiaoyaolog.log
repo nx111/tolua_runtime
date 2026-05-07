@@ -1,0 +1,4 @@
+run failed: tmp.lua:26986: attempt to concatenate a table value
+stack traceback:
+	tmp.lua:26986: in main chunk
+run ok: /mnt/d/Games/work/tolua_runtime/tmp/offline_regression_extendtalents2_realdmglog_fix/AttackLogic.lua.fr2.bin mode=attacklogic_extendtalents2_xiaoyaolog

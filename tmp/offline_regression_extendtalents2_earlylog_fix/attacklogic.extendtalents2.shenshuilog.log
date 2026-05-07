@@ -1,0 +1,4 @@
+run failed: tmp.lua:26986: attempt to concatenate a table value
+stack traceback:
+	tmp.lua:26986: in main chunk
+@bcrun_attacklogic_extendtalents2_shenshuilog failed: bcrun_attacklogic_extendtalents2_shenshuilog:354: shenshui_attacker_callbacks=0 wf=本味|盗圣 role=

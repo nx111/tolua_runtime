@@ -1,0 +1,22 @@
+[repack] proto=1 pc=4 reject existing FR2 slice: new-first writer matches old-second old=1(pc=1,MOV) old2=2(pc=3,KSTR) new=2(pc=3,KSTR)
+[repack] slice fail pc=80 unresolved reg=5 range=[4,5]
+[repack] simple-local pick pc=79 op=SUBNV def=4 range=[4,5]
+[repack] simple-local missing reg=5 range=[4,5]
+[repack] proto=5 pc=59 open CALL/CALLM local align base 13->14 cat [14,15]->[16,17]
+[repack] proto=5 pc=76 reject existing FR2 slice: new-first writer matches old-second old=14(pc=73,MOV) old2=15(pc=75,KSTR) new=15(pc=75,KSTR)
+[repack] proto=5 pc=85 reject existing FR2 slice: new-first writer matches old-second old=14(pc=81,MOV) old2=15(pc=83,KSTR) new=15(pc=83,KSTR)
+[repack] proto=5 pc=92 reject existing FR2 slice: new-first writer matches old-second old=14(pc=87,MOV) old2=15(pc=89,KSTR) new=15(pc=89,KSTR)
+[repack] proto=5 pc=98 reject existing FR2 slice: new-first writer matches old-second old=14(pc=95,MOV) old2=15(pc=97,KSTR) new=15(pc=97,KSTR)
+[repack] proto=5 pc=107 reject existing FR2 slice: new-first writer matches old-second old=16(pc=105,MOV) old2=17(pc=106,KSTR) new=17(pc=106,KSTR)
+[repack] slice fail pc=111 unresolved reg=19 range=[18,19]
+[repack] simple-local pick pc=110 op=MOV def=18 range=[18,19]
+[repack] simple-local missing reg=19 range=[18,19]
+[repack] slice fail pc=124 unresolved reg=25 range=[24,25]
+[repack] simple-local pick pc=123 op=KPRI def=24 range=[24,25]
+[repack] simple-local missing reg=25 range=[24,25]
+[repack] slice fail pc=132 unresolved reg=27 range=[26,27]
+[repack] simple-local pick pc=131 op=MOV def=26 range=[26,27]
+[repack] simple-local missing reg=27 range=[26,27]
+[repack] proto=5 pc=139 accept existing FR2 slice [26,27]
+[repack] proto=5 pc=155 reject existing FR2 slice: stale new-first old=18(pc=154,CAT) new=19(pc=153,KSTR)
+converted /mnt/d/Games/work/jygame_renew/gamedata/modcache/SSWS_HG/lua/luajit/main.lua -> /mnt/d/Games/work/tolua_runtime/tmp/hosttool_rebuild_probe/main.lua.fr2.bin (8960 -> 8960 bytes, target_fr2=1)

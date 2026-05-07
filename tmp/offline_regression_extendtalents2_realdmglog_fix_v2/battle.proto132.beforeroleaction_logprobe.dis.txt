@@ -1,0 +1,42 @@
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+0655 line=2916 MOV    A=8 B=0 C=0 D=0 raw=0x00000812 op_raw=18 op=18
+0656 line=2916 TGETS  A=7 B=0 C=57 D=57 raw=0x00390739 op_raw=57 op=57
+0657 line=2916 TGETS  A=9 B=1 C=39 D=295 raw=0x01270939 op_raw=57 op=57
+0658 line=2917 TGETS  A=9 B=9 C=29 D=2333 raw=0x091d0939 op_raw=57 op=57
+0659 line=2917 KSTR   A=10 B=0 C=117 D=117 raw=0x00750a27 op_raw=39 op=39
+0660 line=2917 CAT    A=9 B=9 C=10 D=2314 raw=0x090a0926 op_raw=38 op=38
+0661 line=2917 MOV    A=11 B=0 C=9 D=9 raw=0x00090b12 op_raw=18 op=18
+0662 line=2918 MOV    A=10 B=0 C=8 D=8 raw=0x00080a12 op_raw=18 op=18
+0663 line=2920 MOV    A=8 B=0 C=7 D=7 raw=0x00070812 op_raw=18 op=18
+0664 line=2920 CALL   A=8 B=1 C=3 D=259 raw=0x01030842 op_raw=66 op=66
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+1174 line=3043 MOV    A=11 B=0 C=0 D=0 raw=0x00000b12 op_raw=18 op=18
+1175 line=3043 TGETS  A=9 B=0 C=57 D=57 raw=0x00390939 op_raw=57 op=57
+1176 line=3043 KSTR   A=12 B=0 C=140 D=140 raw=0x008c0c27 op_raw=39 op=39
+1177 line=3043 TGETS  A=13 B=1 C=39 D=295 raw=0x01270d39 op_raw=57 op=57
+1178 line=3043 TGETS  A=13 B=13 C=29 D=3357 raw=0x0d1d0d39 op_raw=57 op=57
+1179 line=3043 KSTR   A=14 B=0 C=179 D=179 raw=0x00b30e27 op_raw=39 op=39
+1180 line=3044 MOV    A=15 B=0 C=7 D=7 raw=0x00070f12 op_raw=18 op=18
+1181 line=3044 KSTR   A=16 B=0 C=180 D=180 raw=0x00b41027 op_raw=39 op=39
+1182 line=3044 CAT    A=12 B=12 C=16 D=3088 raw=0x0c100c26 op_raw=38 op=38
+1183 line=3044 CALL   A=9 B=1 C=3 D=259 raw=0x01030942 op_raw=66 op=66
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+1200 line=3050 MOV    A=9 B=0 C=0 D=0 raw=0x00000912 op_raw=18 op=18
+1201 line=3050 TGETS  A=7 B=0 C=57 D=57 raw=0x00390739 op_raw=57 op=57
+1202 line=3050 KSTR   A=10 B=0 C=182 D=182 raw=0x00b60a27 op_raw=39 op=39
+1203 line=3050 TGETS  A=11 B=4 C=71 D=1095 raw=0x04470b39 op_raw=57 op=57
+1204 line=3050 TGETS  A=11 B=11 C=29 D=2845 raw=0x0b1d0b39 op_raw=57 op=57
+1205 line=3050 KSTR   A=12 B=0 C=183 D=183 raw=0x00b70c27 op_raw=39 op=39
+1206 line=3050 CAT    A=10 B=10 C=12 D=2572 raw=0x0a0c0a26 op_raw=38 op=38
+1207 line=3050 CALL   A=7 B=1 C=3 D=259 raw=0x01030742 op_raw=66 op=66
+proto=193 numbc=51 framesize=12 params=3 uv=0 pflags=0x00 dbg=99 lines=4669-4678
+0040 line=4676 MOV    A=6 B=0 C=0 D=0 raw=0x00000612 op_raw=18 op=18
+0041 line=4676 TGETS  A=4 B=0 C=9 D=9 raw=0x00090439 op_raw=57 op=57
+0042 line=4676 KSTR   A=7 B=0 C=10 D=10 raw=0x000a0727 op_raw=39 op=39
+0043 line=4676 TGETS  A=8 B=1 C=11 D=267 raw=0x010b0839 op_raw=57 op=57
+0044 line=4676 TGETS  A=8 B=8 C=12 D=2060 raw=0x080c0839 op_raw=57 op=57
+0045 line=4676 KSTR   A=9 B=0 C=13 D=13 raw=0x000d0927 op_raw=39 op=39
+0046 line=4676 MOV    A=10 B=0 C=3 D=3 raw=0x00030a12 op_raw=18 op=18
+0047 line=4676 KSTR   A=11 B=0 C=14 D=14 raw=0x000e0b27 op_raw=39 op=39
+0048 line=4676 CAT    A=7 B=7 C=11 D=1803 raw=0x070b0726 op_raw=38 op=38
+0049 line=4678 CALL   A=4 B=1 C=3 D=259 raw=0x01030442 op_raw=66 op=66

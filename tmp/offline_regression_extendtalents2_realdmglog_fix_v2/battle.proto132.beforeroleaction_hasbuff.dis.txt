@@ -1,0 +1,11 @@
+proto=132 numbc=1365 framesize=32 params=2 uv=4 pflags=0x00 dbg=3494 lines=2711-3093
+1143 line=3030 ISNEXT A=13 B=128 C=26 D=32794 raw=0x801a0d48 op_raw=72 op=72
+1144 line=3030 MOV    A=17 B=0 C=1 D=1 raw=0x00011112 op_raw=18 op=18
+1145 line=3030 TGETS  A=15 B=1 C=49 D=305 raw=0x01310f39 op_raw=57 op=57
+1146 line=3031 MOV    A=18 B=0 C=14 D=14 raw=0x000e1212 op_raw=18 op=18
+1147 line=3031 CALL   A=15 B=2 C=3 D=515 raw=0x02030f42 op_raw=66 op=66
+1148 line=3031 ISF    A=0 B=0 C=15 D=15 raw=0x000f000f op_raw=15 op=15
+1149 line=3031 JMP    A=16 B=128 C=20 D=32788 raw=0x80141058 op_raw=88 op=88
+1150 line=3024 KPRI   A=8 B=0 C=2 D=2 raw=0x0002082b op_raw=43 op=43
+1151 line=3024 MOV    A=17 B=0 C=1 D=1 raw=0x00011112 op_raw=18 op=18
+1152 line=3036 TGETS  A=15 B=1 C=105 D=361 raw=0x01690f39 op_raw=57 op=57

@@ -1,0 +1,13 @@
+proto=127 numbc=224 framesize=28 params=5 uv=0 pflags=0x00 dbg=490 lines=2411-2487
+0060 line=2436 MOV    A=15 B=0 C=0 D=0 raw=0x00000f12 op_raw=18 op=18
+0061 line=2436 TGETS  A=13 B=0 C=10 D=10 raw=0x000a0d39 op_raw=57 op=57
+0062 line=2436 TGETS  A=16 B=1 C=3 D=259 raw=0x01031039 op_raw=57 op=57
+0063 line=2436 TGETS  A=16 B=16 C=6 D=4102 raw=0x10061039 op_raw=57 op=57
+0064 line=2436 KSTR   A=17 B=0 C=11 D=11 raw=0x000b1127 op_raw=39 op=39
+0065 line=2436 MOV    A=18 B=0 C=11 D=11 raw=0x000b1212 op_raw=18 op=18
+0066 line=2436 KSTR   A=19 B=0 C=12 D=12 raw=0x000c1327 op_raw=39 op=39
+0067 line=2436 MOV    A=20 B=0 C=12 D=12 raw=0x000c1412 op_raw=18 op=18
+0068 line=2436 KSTR   A=21 B=0 C=13 D=13 raw=0x000d1527 op_raw=39 op=39
+0069 line=2440 TGETS  A=22 B=10 C=7 D=2567 raw=0x0a071639 op_raw=57 op=57
+0070 line=2440 CAT    A=16 B=16 C=22 D=4118 raw=0x10161026 op_raw=38 op=38
+0071 line=2440 CALL   A=13 B=1 C=3 D=259 raw=0x01030d42 op_raw=66 op=66

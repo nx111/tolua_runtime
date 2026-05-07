@@ -1,0 +1,9 @@
+proto=192 numbc=171 framesize=15 params=4 uv=3 pflags=0x00 dbg=309 lines=4607-4664
+0144 line=4655 GGET   A=6 B=0 C=35 D=35 raw=0x00230636 op_raw=54 op=54
+0145 line=4655 TGETS  A=6 B=6 C=36 D=1572 raw=0x06240639 op_raw=57 op=57
+0146 line=4655 TGETS  A=8 B=1 C=24 D=280 raw=0x01180839 op_raw=57 op=57
+0147 line=4655 TGETS  A=9 B=1 C=23 D=279 raw=0x01170939 op_raw=57 op=57
+0148 line=4655 SUBVV  A=8 B=8 C=9 D=2057 raw=0x08090821 op_raw=33 op=33
+0149 line=4655 MULVN  A=8 B=8 C=5 D=2053 raw=0x08050818 op_raw=24 op=24
+0150 line=4655 MULVN  A=9 B=5 C=6 D=1286 raw=0x05060918 op_raw=24 op=24
+0151 line=4655 CALL   A=6 B=2 C=3 D=515 raw=0x02030642 op_raw=66 op=66

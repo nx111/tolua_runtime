@@ -1,0 +1,1 @@
+@bcrun_battle_dodirectdamage_logprobe failed: tmp.lua:354: bad argument #2 to 'min' (number expected, got function)

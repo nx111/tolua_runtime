@@ -1,0 +1,4 @@
+run failed: tmp.lua:26986: attempt to concatenate a table value
+stack traceback:
+	tmp.lua:26986: in main chunk
+@bcrun_attacklogic_extendtalents_maxprobe failed: bcrun_attacklogic_extendtalents_maxprobe:108: hits=0 rows=中神通:3217|救死扶伤:3459|玄武之甲:3385

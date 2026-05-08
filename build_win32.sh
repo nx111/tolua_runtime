@@ -15,6 +15,7 @@ i686-w64-mingw32-gcc -m32 -O2 -std=gnu99 -shared \
 	int64.c \
 	uint64.c \
 	tolua.c \
+	tolua_fr1_to_fr2.c \
 	pb.c \
 	lpeg.c \
 	struct.c \

@@ -2595,47 +2595,132 @@ function Test-AttackLogicShieldLogWindow([string]$repoRootWsl, [string]$bytecode
     $disWsl = Convert-ToWslPath $disPath
     $dumpCmd = @(
         "cd '$repoRootWsl'",
-        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 3 > '$disWsl'"
+        "./tools/bc_dump_proto_wsl '$bytecodeWsl' 2 > '$disWsl'"
     ) -join " && "
     $code = Invoke-WslBash $dumpCmd
     if ($code -ne 0) {
         return [pscustomobject]@{
             ok = $false
-            failures = @("bc_dump_proto_wsl proto3 failed exit=$code")
+            failures = @("bc_dump_proto_wsl proto2 failed exit=$code")
         }
     }
 
     $disText = Get-Content $disPath -Raw
-    $badPattern = '(?ms)^\d{4}\s+line=315\s+MOV\s+A=11\s+B=0\s+C=4\s+D=4.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=10\s+B=4\s+C=59\s+D=1083.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=12\s+B=0\s+C=89\s+D=89.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=13\s+B=3\s+C=4\s+D=772.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=13\s+B=13\s+C=0\s+D=3328.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=14\s+B=0\s+C=90\s+D=90.*\r?\n' +
-        '^\d{4}\s+line=315\s+MOV\s+A=15\s+B=0\s+C=9\s+D=9.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=16\s+B=0\s+C=91\s+D=91.*\r?\n' +
-        '^\d{4}\s+line=316\s+CAT\s+A=12\s+B=12\s+C=16\s+D=3088.*\r?\n' +
-        '^\d{4}\s+line=316\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
-    $goodPattern = '(?ms)^\d{4}\s+line=315\s+MOV\s+A=12\s+B=0\s+C=4\s+D=4.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=10\s+B=4\s+C=59\s+D=1083.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=13\s+B=0\s+C=89\s+D=89.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=14\s+B=3\s+C=4\s+D=772.*\r?\n' +
-        '^\d{4}\s+line=315\s+TGETS\s+A=14\s+B=14\s+C=0\s+D=3584.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=15\s+B=0\s+C=90\s+D=90.*\r?\n' +
-        '^\d{4}\s+line=315\s+MOV\s+A=16\s+B=0\s+C=9\s+D=9.*\r?\n' +
-        '^\d{4}\s+line=315\s+KSTR\s+A=17\s+B=0\s+C=91\s+D=91.*\r?\n' +
-        '^\d{4}\s+line=316\s+CAT\s+A=13\s+B=13\s+C=17\s+D=3345.*\r?\n' +
-        '^\d{4}\s+line=316\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
-    $badCount = [regex]::Matches($disText, $badPattern).Count
-    $goodCount = [regex]::Matches($disText, $goodPattern).Count
+    $badMaxPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=1\s+C=9\s+D=265[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+SUBVN\s+A=9\s+B=9\s+C=1\s+D=2305[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=10\s+B=0\s+C=0\s+D=0[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3\s+D=515'
+    $goodMaxPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=1\s+C=9\s+D=265[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+SUBVN\s+A=10\s+B=10\s+C=1\s+D=2561[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSHORT\s+A=11\s+B=0\s+C=0\s+D=0[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=2\s+C=3\s+D=515'
+    $badShortLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=9\s+B=9\s+C=5\s+D=2309[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=10\s+B=0\s+C=(?:6|13|27)\s+D=(?:6|13|27)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=9\s+B=9\s+C=10\s+D=2314[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=1\s+C=3\s+D=259'
+    $goodShortLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=10\s+C=5\s+D=2565[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=(?:6|13|27)\s+D=(?:6|13|27)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=10\s+B=10\s+C=11\s+D=2571[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=1\s+C=3\s+D=259'
+    $badYubaibingLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=10\s+C=5\s+D=2565[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=(?:24|25)\s+D=(?:24|25)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=10\s+B=10\s+C=11\s+D=2571[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=1\s+C=3\s+D=259'
+    $goodYubaibingLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=10\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=8\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=11\s+C=5\s+D=2821[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=12\s+B=0\s+C=(?:24|25)\s+D=(?:24|25)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=11\s+B=11\s+C=12\s+D=2828[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=8\s+B=1\s+C=3\s+D=259'
+    $badLongLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=8\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=9\s+B=0\s+C=(?:33|36|39)\s+D=(?:33|36|39)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=10\s+C=5\s+D=2565[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=11\s+B=0\s+C=(?:34|37|40)\s+D=(?:34|37|40)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=9\s+B=9\s+C=11\s+D=2315[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=1\s+C=3\s+D=259'
+    $goodLongLogPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=9\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=7\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=10\s+B=0\s+C=(?:33|36|39)\s+D=(?:33|36|39)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=11\s+C=5\s+D=2821[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=12\s+B=0\s+C=(?:34|37|40)\s+D=(?:34|37|40)[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=10\s+B=10\s+C=12\s+D=2572[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=7\s+B=1\s+C=3\s+D=259'
+    $badShieldLossPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=11\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=12\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=12\s+B=12\s+C=5\s+D=3077[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=13\s+B=0\s+C=46\s+D=46[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=14\s+B=0\s+C=9\s+D=9[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=15\s+B=0\s+C=47\s+D=47[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=12\s+B=12\s+C=15\s+D=3087[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $goodShieldLossPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=10\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=13\s+C=5\s+D=3333[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=14\s+B=0\s+C=46\s+D=46[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=0\s+C=9\s+D=9[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=0\s+C=47\s+D=47[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=13\s+B=13\s+C=16\s+D=3344[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=10\s+B=1\s+C=3\s+D=259'
+    $badShieldHpPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=12\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=13\s+B=13\s+C=5\s+D=3333[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=14\s+B=0\s+C=53\s+D=53[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=15\s+B=0\s+C=10\s+D=10[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=16\s+B=0\s+C=54\s+D=54[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=13\s+B=13\s+C=16\s+D=3344[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=11\s+B=1\s+C=3\s+D=259'
+    $goodShieldHpPattern = '(?m)^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=13\s+B=0\s+C=2\s+D=2[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=11\s+B=2\s+C=3\s+D=515[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=1\s+C=4\s+D=260[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=14\s+B=14\s+C=5\s+D=3589[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=15\s+B=0\s+C=53\s+D=53[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=0\s+C=10\s+D=10[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=17\s+B=0\s+C=54\s+D=54[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=14\s+B=14\s+C=17\s+D=3601[^\r\n]*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=11\s+B=1\s+C=3\s+D=259'
+
+    $badMaxCount = [regex]::Matches($disText, $badMaxPattern).Count
+    $goodMaxCount = [regex]::Matches($disText, $goodMaxPattern).Count
+    $badShortLogCount = [regex]::Matches($disText, $badShortLogPattern).Count
+    $goodShortLogCount = [regex]::Matches($disText, $goodShortLogPattern).Count
+    $badYubaibingLogCount = [regex]::Matches($disText, $badYubaibingLogPattern).Count
+    $goodYubaibingLogCount = [regex]::Matches($disText, $goodYubaibingLogPattern).Count
+    $badLongLogCount = [regex]::Matches($disText, $badLongLogPattern).Count
+    $goodLongLogCount = [regex]::Matches($disText, $goodLongLogPattern).Count
+    $badShieldLossCount = [regex]::Matches($disText, $badShieldLossPattern).Count
+    $goodShieldLossCount = [regex]::Matches($disText, $goodShieldLossPattern).Count
+    $badShieldHpCount = [regex]::Matches($disText, $badShieldHpPattern).Count
+    $goodShieldHpCount = [regex]::Matches($disText, $goodShieldHpPattern).Count
 
     $fails = New-Object System.Collections.Generic.List[string]
-    if ($badCount -ne 0) {
-        $fails.Add("residual bad proto3 shield-loss bf.Log window")
-    }
-    if ($goodCount -eq 0) {
-        $fails.Add("missing corrected proto3 shield-loss bf.Log window")
-    }
+    if ($badMaxCount -ne 0) { $fails.Add("residual bad proto2 shield math.max window") }
+    if ($goodMaxCount -ne 1) { $fails.Add("expected 1 corrected proto2 shield math.max window, got $goodMaxCount") }
+    if ($badShortLogCount -ne 0) { $fails.Add("residual bad proto2 short bf.Log window") }
+    if ($goodShortLogCount -ne 3) { $fails.Add("expected 3 corrected proto2 short bf.Log windows, got $goodShortLogCount") }
+    if ($badYubaibingLogCount -ne 0) { $fails.Add("residual bad proto2 yubaibing bf.Log window") }
+    if ($goodYubaibingLogCount -ne 2) { $fails.Add("expected 2 corrected proto2 yubaibing bf.Log windows, got $goodYubaibingLogCount") }
+    if ($badLongLogCount -ne 0) { $fails.Add("residual bad proto2 long bf.Log window") }
+    if ($goodLongLogCount -ne 3) { $fails.Add("expected 3 corrected proto2 long bf.Log windows, got $goodLongLogCount") }
+    if ($badShieldLossCount -ne 0) { $fails.Add("residual bad proto2 shield-loss bf.Log window") }
+    if ($goodShieldLossCount -ne 1) { $fails.Add("expected 1 corrected proto2 shield-loss bf.Log window, got $goodShieldLossCount") }
+    if ($badShieldHpCount -ne 0) { $fails.Add("residual bad proto2 shield-to-maxhp bf.Log window") }
+    if ($goodShieldHpCount -ne 1) { $fails.Add("expected 1 corrected proto2 shield-to-maxhp bf.Log window, got $goodShieldHpCount") }
 
     return [pscustomobject]@{
         ok = ($fails.Count -eq 0)
@@ -4031,6 +4116,19 @@ function Test-AttackLogicExtendTalents2RealDmgLogHarness([string]$repoRootWsl, [
     }
 }
 
+function Test-AttackLogicExtendTalents2ShieldLogHarness([string]$repoRootWsl, [string]$bytecodeWsl, [string]$logPath) {
+    $logWsl = Convert-ToWslPath $logPath
+    $runCmd = @(
+        "cd '$repoRootWsl'",
+        "./tools/bcrun_cli_wsl '$bytecodeWsl' attacklogic_extendtalents2_shieldlog > '$logWsl' 2>&1"
+    ) -join " && "
+    $code = Invoke-WslBash $runCmd
+    return [pscustomobject]@{
+        ok = ($code -eq 0)
+        exit_code = $code
+    }
+}
+
 function Test-AttackLogicExtendTalents2ChaizhaoLogHarness([string]$repoRootWsl, [string]$battleBytecodeWsl, [string]$attacklogicBytecodeWsl, [string]$logPath) {
     $logWsl = Convert-ToWslPath $logPath
     $runCmd = @(
@@ -4801,7 +4899,7 @@ if (Test-Path $attacklogicPath) {
         }
     }
 
-    $attackLogicShieldLogDis = Join-Path $outAbs "attacklogic.proto3.shieldlog.dis.txt"
+    $attackLogicShieldLogDis = Join-Path $outAbs "attacklogic.proto2.shieldlog.dis.txt"
     $attackLogicShieldLogCheck = Test-AttackLogicShieldLogWindow -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -disPath $attackLogicShieldLogDis
     $attackLogicShieldLogFailures = @($attackLogicShieldLogCheck.failures).Count
     if (-not $attackLogicShieldLogCheck.ok) {
@@ -4931,6 +5029,7 @@ if (Test-Path $attacklogicPath) {
     $extendTalents2LogHarnessFailures = 0
     $extendTalents2MissHarnessFailures = 0
     $extendTalents2RealDmgHarnessFailures = 0
+    $extendTalents2ShieldHarnessFailures = 0
     $extendTalents2YihuaHarnessFailures = 0
     $extendTalents2FullProbeFailures = 0
     $extendTalents2MissLog = Join-Path $outAbs "attacklogic.extendtalents2.misslog.log"
@@ -4946,6 +5045,13 @@ if (Test-Path $attacklogicPath) {
     if (-not $extendTalents2RealDmgHarnessCheck.ok) {
         $failed = $true
         Write-Warning "[attacklogic extendtalents2 realdmglog] harness failed exit=$($extendTalents2RealDmgHarnessCheck.exit_code): $extendTalents2RealDmgLog"
+    }
+    $extendTalents2ShieldLog = Join-Path $outAbs "attacklogic.extendtalents2.shieldlog.log"
+    $extendTalents2ShieldHarnessCheck = Test-AttackLogicExtendTalents2ShieldLogHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2ShieldLog
+    $extendTalents2ShieldHarnessFailures = if ($extendTalents2ShieldHarnessCheck.ok) { 0 } else { 1 }
+    if (-not $extendTalents2ShieldHarnessCheck.ok) {
+        $failed = $true
+        Write-Warning "[attacklogic extendtalents2 shieldlog] harness failed exit=$($extendTalents2ShieldHarnessCheck.exit_code): $extendTalents2ShieldLog"
     }
     $extendTalents2FullProbeLog = Join-Path $outAbs "attacklogic.extendtalents2.fullprobe.log"
     $extendTalents2FullProbeCheck = Test-AttackLogicExtendTalents2FullProbeHarness -repoRootWsl $repoRootWsl -bytecodeWsl $outWsl -logPath $extendTalents2FullProbeLog
@@ -5005,7 +5111,9 @@ if (Test-Path $attacklogicPath) {
     # single-file stub as fullprobe, but forces result.Hp==0 and proves the
     # early line6346 branch that fullprobe does not pin. The paired realdmglog
     # harness stays in gating because it drives the sibling line6350 branch
-    # with prevRoleAtk.RealDmg > 0.
+    # with prevRoleAtk.RealDmg > 0. The shieldlog harness also stays in
+    # gating because it is the only single-file probe that executes
+# proto2/jixianJianShang before DoDirectDamage.
     # The xixing callback harness stays diagnostic-only for now: the single-file
     # loader still aborts early at tmp.lua:26986 before that workflow is
     # registered, so it can prove stub coverage gaps but not runtime regressions.
@@ -5040,7 +5148,7 @@ if (Test-Path $attacklogicPath) {
         extendtalents_shape_fail = ($extendTalentsHasBuffFailures + $extendTalentsMaxFailures + $extendTalentsBiliangFailures + $extendTalents2GedangFailures + $extendTalents2MissFailures + $attackLogicShieldLogFailures + $extendTalents2ChaizhaoFailures + $extendTalents2TalentLogFailures + $extendTalents2CallbackFailures + $extendTalents2RemoveFailures + $extendTalents2XiLogFailures + $extendTalents2XiaoyaoFailures + $extendTalents2ShenshuiFailures + $extendTalents2XixingLogFailures + $extendTalents2XixingC7Failures + $extendTalents2XiValueFailures + $extendTalents2YihuaFailures)
         tempvalue_fail        = $harnessFailures
         tempvalue_chain_fail  = $chainHarnessFailures
-        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2RealDmgHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures + $extendTalents2XiaoyaoHarnessFailures)
+        extendtalents2_log_fail = ($extendTalents2LogHarnessFailures + $extendTalents2MissHarnessFailures + $extendTalents2RealDmgHarnessFailures + $extendTalents2ShieldHarnessFailures + $extendTalents2YihuaHarnessFailures + $extendTalents2FullProbeFailures + $extendTalents2RemoveHarnessFailures + $extendTalents2XiLogHarnessFailures + $extendTalents2XiaoyaoHarnessFailures)
         log_path              = $logPath
         out_path              = $outPath
     }

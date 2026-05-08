@@ -46,7 +46,6 @@ cd luajit-2.1
 make clean
 make BUILDMODE=static HOST_CC="gcc -m64 -O2" CROSS=x86_64-w64-mingw32- TARGET_SYS=Windows XCFLAGS="$WIN64_LUAJIT_XCFLAGS"
 cp src/libluajit.a ../window/x86_64/libluajit.a
-make clean
 
 cd ..
 
@@ -80,3 +79,6 @@ x86_64-w64-mingw32-gcc -m64 -O2 -std=gnu99 $WIN64_LUAJIT_XCFLAGS -shared \
  -Iluasocket \
  -lws2_32 \
  -Wl,--whole-archive window/x86_64/libluajit.a -Wl,--no-whole-archive -static-libgcc -static-libstdc++
+
+cd luajit-2.1
+make clean

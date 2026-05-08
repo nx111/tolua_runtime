@@ -158,7 +158,4 @@ LUALIB_API void (luaL_pushresult) (luaL_Buffer *B);
 
 /* }====================================================== */
 
-#define lua_unref(L,ref)        luaL_unref(L, LUA_REGISTRYINDEX, (ref))
-
-#define lua_getref(L,ref)       lua_rawgeti(L, LUA_REGISTRYINDEX, (ref))
 #endif

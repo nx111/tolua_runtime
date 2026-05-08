@@ -11214,7 +11214,7 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
     }
   }
 
-  /* proto241 "八百圣贤像" bf.Log window observed after conversion:
+  /* proto241 "擘两分星" bf.Log window observed after conversion:
        MOV A16 <- A3; TGETS A15 B=3 C=23 D=791;
        TGETS A17 B=0 C=24; TGETS A17 B=17 C=2; KSTR A18 D=34;
        MOV A19 <- A13; KSTR A20 D=35; GGET A21; TGETS A21 B=21 C=22 D=5398;
@@ -11288,7 +11288,63 @@ static int tolua_patch_proto_v1_fr2(uint8_t *buf, size_t bc_pos, uint32_t numbc,
       }
 
       TOLUA_REPACK_LOG(ctx, p,
-                       "apply proto241 baishengxianxiang bf.Log fix A16..A22 -> A17..A23");
+                       "apply proto241 biliang bf.Log fix A16..A22 -> A17..A23");
+    }
+  }
+
+  /* proto241 "擘两分星" nested one-arg direct call observed after the outer
+     bf.Log window shift:
+       MOV A17 <- A3; TGETS A15 B=3 C=23 D=791;
+       TGETS A18 B=0 C=24; TGETS A18 B=18 C=2; KSTR A19 D=34;
+       MOV A20 <- A13; KSTR A21 D=35; GGET A22; TGETS A22 B=22 C=22 D=5654;
+       MOV A23 <- A14; CALL A22 B2 C2; KSTR A23 D=26; CAT A18..A23; CALL A15 B1 C3
+     Native GC64 keeps the direct-call arg on A24, leaving A23 as the hole
+     after the function slot. Move only this exact nested arg carrier. */
+  if (ctx != NULL && ctx->proto_index == 241u) {
+    uint32_t p = 0;
+    for (p = 10; p + 2 < numbc; p++) {
+      BCIns c = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)p * 4, be);
+      BCIns n1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p + 1) * 4, be);
+      BCIns n2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p + 2) * 4, be);
+      BCIns i1 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 1) * 4, be);
+      BCIns i2 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 2) * 4, be);
+      BCIns i3 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 3) * 4, be);
+      BCIns i4 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 4) * 4, be);
+      BCIns i5 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 5) * 4, be);
+      BCIns i6 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 6) * 4, be);
+      BCIns i7 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 7) * 4, be);
+      BCIns i8 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 8) * 4, be);
+      BCIns i9 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 9) * 4, be);
+      BCIns i10 = (BCIns)tolua_read_ins(buf + bc_pos + (size_t)(p - 10) * 4, be);
+      BCOp cop = bc_op(c), on1 = bc_op(n1), on2 = bc_op(n2), o1 = bc_op(i1), o2 = bc_op(i2);
+      BCOp o3 = bc_op(i3), o4 = bc_op(i4), o5 = bc_op(i5), o6 = bc_op(i6), o7 = bc_op(i7);
+      BCOp o8 = bc_op(i8), o9 = bc_op(i9), o10 = bc_op(i10);
+
+      if (cop != BC_CALL || bc_a(c) != 22 || bc_b(c) != 2 || bc_c(c) != 2) continue;
+      if (on1 != BC_KSTR || bc_a(n1) != 23 || bc_d(n1) != 26) continue;
+      if (on2 != BC_CAT || bc_a(n2) != 18 || bc_b(n2) != 18 || bc_c(n2) != 23 || bc_d(n2) != 4631) continue;
+      if (o1 != BC_MOV || bc_a(i1) != 23 || bc_d(i1) != 14) continue;
+      if (o2 != BC_TGETS || bc_a(i2) != 22 || bc_b(i2) != 22 || bc_c(i2) != 22 || bc_d(i2) != 5654) continue;
+      if (o3 != BC_GGET || bc_a(i3) != 22 || bc_d(i3) != 21) continue;
+      if (o4 != BC_KSTR || bc_a(i4) != 21 || bc_d(i4) != 35) continue;
+      if (o5 != BC_MOV || bc_a(i5) != 20 || bc_d(i5) != 13) continue;
+      if (o6 != BC_KSTR || bc_a(i6) != 19 || bc_d(i6) != 34) continue;
+      if (o7 != BC_TGETS || bc_a(i7) != 18 || bc_b(i7) != 18 || bc_c(i7) != 2 || bc_d(i7) != 4610) continue;
+      if (o8 != BC_TGETS || bc_a(i8) != 18 || bc_b(i8) != 0 || bc_c(i8) != 24 || bc_d(i8) != 24) continue;
+      if (o9 != BC_TGETS || bc_a(i9) != 15 || bc_b(i9) != 3 || bc_c(i9) != 23 || bc_d(i9) != 791) continue;
+      if (o10 != BC_MOV || bc_a(i10) != 17 || bc_d(i10) != 3) continue;
+
+      setbc_a(&i1, 24);
+      tolua_write_ins(buf + bc_pos + (size_t)(p - 1) * 4, (uint32_t)i1, be);
+
+      status = tolua_update_framesize_checked(framesize_io, 24, ctx, p, c, cop);
+      if (status != TOLUA_BCCONV_OK) {
+        free(targets);
+        return status;
+      }
+
+      TOLUA_REPACK_LOG(ctx, p,
+                       "apply proto241 biliang nested one-arg call fix A23 -> A24");
     }
   }
 

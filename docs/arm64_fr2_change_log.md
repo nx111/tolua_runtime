@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-05-08 15:35
+最后更新：2026-05-08 17:25
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 重启会话入口：见 [FR2_RESTART.md](E:/Games/work/tolua_runtime_master/docs/FR2_RESTART.md)。
 
@@ -12,6 +12,7 @@
 
 ## 0. 最新修复
 
+- 2026-05-08：修正 `AttackLogic_extendTalents` 的 `proto241 / 擘两分星` 第 4 组窗口里残留的一参 `floor` 直调。上一轮只把外层 `bf:Log(...)` 从 `A16..A22 -> A17..A23` 收正，内层 `CALL A22 B2 C2` 仍保留 `MOV A23<-A14` 的 FR1 形态；本次只把这条 nested arg carrier 从 `A23 -> A24`，补齐 FR2 的 function-slot hole，并把 `proto241` 第 4 组静态门禁从“外层 log 已右移”收紧为“内层一参直调也已右移”。
 - 2026-05-08：修正 `AttackLogic_extendTalents` 的 `proto241 / 八百圣贤像` 残留 `bf:Log(...)` self 槽位错位，将坏窗 `A16..A22 -> A17..A23`；同步把 `proto241` 的 extendtalents bf.Log 静态门禁扩成第 4 组，覆盖这条之前漏掉的窗口。
 
 ## 2. 变更记录（按时间倒序）

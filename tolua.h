@@ -56,6 +56,10 @@
 #define TOLUA_BCCONV_ERR_REGISTER_OVERFLOW     10
 #define TOLUA_BCCONV_ERR_UNSUPPORTED_RUNTIME   11
 
+#if !defined(lua_getref)
+#define lua_getref(L, ref) lua_rawgeti(L, LUA_REGISTRYINDEX, (ref))
+#endif
+
 #define abs_index(L, i)  ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : lua_gettop(L) + (i) + 1)
 
 void tolua_openint64(lua_State* L);

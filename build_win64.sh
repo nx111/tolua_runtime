@@ -1,8 +1,46 @@
 #!/bin/bash
 # 64 Bit Version
-#WIN64_LUAJIT_XCFLAGS=${WIN64_LUAJIT_XCFLAGS--DLUAJIT_ENABLE_GC64}
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: build_win64.sh [-fr2]
+
+Options:
+  -fr2    Enable LuaJIT GC64 build flags.
+EOF
+}
+
+ENABLE_FR2=0
+for arg in "$@"; do
+  case "$arg" in
+    -fr2)
+      ENABLE_FR2=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $arg" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+WIN64_LUAJIT_XCFLAGS="${WIN64_LUAJIT_XCFLAGS:-}"
+if [ "$ENABLE_FR2" -eq 1 ]; then
+  WIN64_LUAJIT_XCFLAGS="${WIN64_LUAJIT_XCFLAGS:+$WIN64_LUAJIT_XCFLAGS }-DLUAJIT_ENABLE_GC64"
+fi
 
 mkdir -p window/x86_64
+mkdir -p Plugins/x86_64
+
+if [ "$ENABLE_FR2" -eq 1 ]; then
+  echo "[INFO] LuaJIT GC64: enabled (-fr2)"
+fi
 
 cd luajit-2.1
 make clean

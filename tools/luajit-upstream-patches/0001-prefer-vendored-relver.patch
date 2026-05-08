@@ -1,0 +1,27 @@
+diff --git a/src/Makefile b/src/Makefile
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -490,9 +490,9 @@ DASM_DASC= vm_$(DASM_ARCH).dasc
+ 
+ GIT= git
+ ifeq (Windows,$(HOST_SYS)$(HOST_MSYS))
+-  GIT_RELVER= if exist ..\.git ( $(GIT) show -s --format=%%ct >luajit_relver.txt ) else ( type ..\.relver >luajit_relver.txt )
++  GIT_RELVER= if exist ..\.relver ( type ..\.relver >luajit_relver.txt ) else ( if exist ..\.git ( $(GIT) show -s --format=%%ct >luajit_relver.txt ) else ( exit /b 1 ) )
+ else
+-  GIT_RELVER= [ -e ../.git ] && $(GIT) show -s --format=%ct >luajit_relver.txt 2>/dev/null || cat ../.relver >luajit_relver.txt 2>/dev/null || :
++  GIT_RELVER= [ -e ../.relver ] && cat ../.relver >luajit_relver.txt 2>/dev/null || { [ -e ../.git ] && $(GIT) show -s --format=%ct >luajit_relver.txt 2>/dev/null; } || :
+ endif
+ GIT_DEP= $(wildcard ../.git/HEAD ../.git/refs/heads/*)
+ 
+diff --git a/src/msvcbuild.bat b/src/msvcbuild.bat
+--- a/src/msvcbuild.bat
++++ b/src/msvcbuild.bat
+@@ -72,7 +72,7 @@ if exist minilua.exe.manifest^
+ minilua %DASM% -LN %DASMFLAGS% -o host\buildvm_arch.h %DASC%
+ @if errorlevel 1 goto :BAD
+ 
+-if exist ..\.git ( git show -s --format=%%ct >luajit_relver.txt ) else ( type ..\.relver >luajit_relver.txt )
++if exist ..\.relver ( type ..\.relver >luajit_relver.txt ) else ( if exist ..\.git ( git show -s --format=%%ct >luajit_relver.txt ) else ( exit /b 1 ) )
+ minilua host\genversion.lua
+ 
+ @setlocal

@@ -1,0 +1,87 @@
+diff --git a/src/lj_bc_remap.h b/src/lj_bc_remap.h
+new file mode 100644
+index 0000000..98203e1
+--- /dev/null
++++ b/src/lj_bc_remap.h
+@@ -0,0 +1,27 @@
++/*
++** Private opcode remap for legacy uLua bytecode.
++*/
++
++#ifndef _LJ_BC_REMAP_H
++#define _LJ_BC_REMAP_H
++
++#include "lj_bc.h"
++
++static const uint8_t ulua_bc_map[] = {
++  BC_ISLT, BC_ISGE, BC_ISLE, BC_ISGT, BC_ISEQV, BC_ISNEV, BC_ISEQS, BC_ISNES,
++  BC_ISEQN, BC_ISNEN, BC_ISEQP, BC_ISNEP, BC_ISTC, BC_ISFC, BC_IST, BC_ISF,
++  BC_MOV, BC_NOT, BC_UNM, BC_LEN,
++  BC_ADDVN, BC_SUBVN, BC_MULVN, BC_DIVVN, BC_MODVN,
++  BC_ADDNV, BC_SUBNV, BC_MULNV, BC_DIVNV, BC_MODNV,
++  BC_ADDVV, BC_SUBVV, BC_MULVV, BC_DIVVV, BC_MODVV,
++  BC_POW, BC_CAT, BC_KSTR, BC_KCDATA, BC_KSHORT, BC_KNUM, BC_KPRI, BC_KNIL,
++  BC_UGET, BC_USETV, BC_USETS, BC_USETN, BC_USETP, BC_UCLO, BC_FNEW, BC_TNEW,
++  BC_TDUP, BC_GGET, BC_GSET, BC_TGETV, BC_TGETS, BC_TGETB,
++  BC_TSETV, BC_TSETS, BC_TSETB, BC_TSETM,
++  BC_CALLM, BC_CALL, BC_CALLMT, BC_CALLT, BC_ITERC, BC_ITERN, BC_VARG, BC_ISNEXT,
++  BC_RETM, BC_RET, BC_RET0, BC_RET1, BC_FORI, BC_JFORI, BC_FORL, BC_IFORL,
++  BC_JFORL, BC_ITERL, BC_IITERL, BC_JITERL, BC_LOOP, BC_ILOOP, BC_JLOOP, BC_JMP,
++  BC_FUNCF, BC_IFUNCF, BC_JFUNCF, BC_FUNCV, BC_IFUNCV, BC_JFUNCV, BC_FUNCC, BC_FUNCCW
++};
++
++#endif
+diff --git a/src/lj_bcread.c b/src/lj_bcread.c
+index c8e884a..7a61ebc 100644
+--- a/src/lj_bcread.c
++++ b/src/lj_bcread.c
+@@ -22,8 +22,10 @@
+ #include "lj_bcdump.h"
+ #include "lj_state.h"
+ #include "lj_strfmt.h"
++#include "lj_bc_remap.h"
+ 
+ /* Reuse some lexer fields for our own purposes. */
++#define BCDUMP_F_V1		0x10
+ #define bcread_flags(ls)	ls->level
+ #define bcread_swap(ls) \
+   ((bcread_flags(ls) & BCDUMP_F_BE) != LJ_BE*BCDUMP_F_BE)
+@@ -294,6 +296,15 @@ static void bcread_bytecode(LexState *ls, GCproto *pt, MSize sizebc)
+     MSize i;
+     for (i = 1; i < sizebc; i++) bc[i] = lj_bswap(bc[i]);
+   }
++  if ((bcread_flags(ls) & BCDUMP_F_V1)) {
++    MSize i;
++    for (i = 1; i < sizebc; i++) {
++      BCOp opv1 = bc_op(bc[i]);
++      if (opv1 < sizeof(ulua_bc_map)) {
++	bc[i] = (bc[i] & ~(BCIns)0xff) | (BCIns)ulua_bc_map[opv1];
++      }
++    }
++  }
+ }
+ 
+ /* Read upvalue refs. */
+@@ -393,12 +404,14 @@ GCproto *lj_bcread_proto(LexState *ls)
+ /* Read and check header of bytecode dump. */
+ static int bcread_header(LexState *ls)
+ {
+-  uint32_t flags;
++  uint32_t flags, version;
+   bcread_want(ls, 3+5+5);
+   if (bcread_byte(ls) != BCDUMP_HEAD2 ||
+-      bcread_byte(ls) != BCDUMP_HEAD3 ||
+-      bcread_byte(ls) != BCDUMP_VERSION) return 0;
++      bcread_byte(ls) != BCDUMP_HEAD3) return 0;
++  version = bcread_byte(ls);
++  if (version != BCDUMP_VERSION && version != 1) return 0;
+   bcread_flags(ls) = flags = bcread_uleb128(ls);
++  if (version == 1) bcread_flags(ls) |= BCDUMP_F_V1;
+   if ((flags & ~(BCDUMP_F_KNOWN)) != 0) return 0;
+   if ((flags & BCDUMP_F_FR2) != (uint32_t)ls->fr2*BCDUMP_F_FR2) return 0;
+   if ((flags & BCDUMP_F_FFI)) {
+@@ -455,4 +468,3 @@ GCproto *lj_bcread(LexState *ls)
+   L->top--;
+   return protoV(L->top);
+ }
+-

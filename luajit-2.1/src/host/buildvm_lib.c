@@ -1,6 +1,6 @@
 /*
 ** LuaJIT VM builder: library definition compiler.
-** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2026 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #include "buildvm.h"
@@ -375,17 +375,25 @@ void emit_lib(BuildCtx *ctx)
     modstate = 0;
     regfunc = REGFUNC_OK;
     while (fgets(buf, sizeof(buf), fp) != NULL) {
-      char *p = strpbrk(buf, "\r\n");
-      if (p) { *p = '\n'; p[1] = '\0'; }
+      char *p;
       /* Simplistic pre-processor. Only handles top-level #if/#endif. */
       if (buf[0] == '#' && buf[1] == 'i' && buf[2] == 'f') {
 	int ok = 1;
-	if (!strcmp(buf, "#if LJ_52\n"))
+	size_t len = strlen(buf);
+	if (buf[len-1] == '\n') {
+	  buf[len-1] = 0;
+	  if (buf[len-2] == '\r') {
+	    buf[len-2] = 0;
+	  }
+	}
+	if (!strcmp(buf, "#if LJ_52"))
 	  ok = LJ_52;
-	else if (!strcmp(buf, "#if LJ_HASJIT\n"))
+	else if (!strcmp(buf, "#if LJ_HASJIT"))
 	  ok = LJ_HASJIT;
-	else if (!strcmp(buf, "#if LJ_HASFFI\n"))
+	else if (!strcmp(buf, "#if LJ_HASFFI"))
 	  ok = LJ_HASFFI;
+	else if (!strcmp(buf, "#if LJ_HASBUFFER"))
+	  ok = LJ_HASBUFFER;
 	if (!ok) {
 	  int lvl = 1;
 	  while (fgets(buf, sizeof(buf), fp) != NULL) {
@@ -406,6 +414,7 @@ void emit_lib(BuildCtx *ctx)
 	  if (!strncmp(p, ldh->suffix, len)) {
 	    p += len;
 	    n = ldh->stop ? strcspn(p, ldh->stop) : 0;
+	    if (!p[n]) break;
 	    p[n] = '\0';
 	    ldh->func(ctx, p, ldh->arg);
 	    p += n+1;

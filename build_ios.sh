@@ -40,7 +40,6 @@ make clean
 ISDKF="-arch arm64 -isysroot $ISDK/SDKs/$ISDKVER -miphoneos-version-min=8.0 -fembed-bitcode"
 make HOST_CC="gcc " TARGET_FLAGS="$ISDKF" TARGET=arm64 TARGET_SYS=iOS BUILDMODE=static
 mv "$SRCDIR"/src/libluajit.a "$DESTDIR"/libluajit-arm64.a
-make clean
 
 cd ../iOS
 $LIPO -create "$DESTDIR"/libluajit-*.a -output "$DESTDIR"/libluajit.a
@@ -48,3 +47,6 @@ $STRIP -S "$DESTDIR"/libluajit.a
 xcodebuild clean
 xcodebuild -configuration=Release
 cp -f ./build/Release-iphoneos/libtolua.a ../Plugins/iOS/
+
+cd ../luajit-2.1
+make clean

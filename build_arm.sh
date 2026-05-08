@@ -20,7 +20,6 @@ cd luajit-2.1/src
 make clean
 make -j$(nproc --ignore 3) HOST_CC="gcc -m32" CROSS=$NDKP STATIC_CC=$CC DYNAMIC_CC="$CC -fPIC" TARGET_LD=$CC TARGET_SYS=Linux TARGET_FLAGS="$TARGET_FLAGS"
 cp ./libluajit.a ../../android/jni/libluajit.a
-make clean
 
 cd ../../android
 $NDK/ndk-build clean APP_ABI="armeabi-v7a"
@@ -28,3 +27,6 @@ $NDK/ndk-build APP_ABI="armeabi-v7a"
 mkdir -p ../Plugins/Android/libs/armeabi-v7a
 cp libs/armeabi-v7a/libtolua.so ../Plugins/Android/libs/armeabi-v7a
 $NDK/ndk-build clean APP_ABI="armeabi-v7a"
+
+cd ../luajit-2.1/src
+make clean

@@ -45,7 +45,6 @@ make clean
 
 make BUILDMODE=static CC="gcc -fPIC -m64 -O2" XCFLAGS="$UBUNTU_LUAJIT_XCFLAGS"
 cp src/libluajit.a ../ubuntu/libluajit.a
-make clean
 
 echo -e "\n[MAINTAINCE] build libluajit.a done\n"
 
@@ -53,6 +52,7 @@ cd ..
 
 gcc -m64 -O2 -std=gnu99 $UBUNTU_LUAJIT_XCFLAGS -shared \
  tolua.c \
+ tolua_fr1_to_fr2.c \
  int64.c \
  uint64.c \
  pb.c \
@@ -81,8 +81,7 @@ gcc -m64 -O2 -std=gnu99 $UBUNTU_LUAJIT_XCFLAGS -shared \
  -Iluasocket \
  -Wl,--whole-archive ubuntu/libluajit.a -Wl,--no-whole-archive -static-libgcc -static-libstdc++
 
-if [ "$?" = "0" ]; then
-	echo -e "\n[MAINTAINCE] build libtolua.so success"
-else
-	echo -e "\n[MAINTAINCE] build libtolua.so failed"
-fi
+cd luajit-2.1
+make clean
+
+echo -e "\n[MAINTAINCE] build libtolua.so success"

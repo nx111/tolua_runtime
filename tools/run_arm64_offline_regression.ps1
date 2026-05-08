@@ -2403,6 +2403,39 @@ function Test-AttackLogicExtendTalentsBiliangLogShift([string]$repoRootWsl, [str
         '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=19\s+B=1\s+C=3\s+D=259',
         $rxOptions)
 
+    $badFourth = [regex]::IsMatch($text,
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=16\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=3\s+C=23\s+D=791.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=\d+\s+C=24\s+D=24.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=17\s+B=17\s+C=2\s+D=4354.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=18\s+B=\d+\s+C=34\s+D=34.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=19\s+B=\d+\s+C=13\s+D=13.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=20\s+B=\d+\s+C=35\s+D=35.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=21\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=21\s+B=21\s+C=22\s+D=5398.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=\d+\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=21\s+B=2\s+C=2\s+D=514.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=22\s+B=\d+\s+C=26\s+D=26.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=17\s+B=17\s+C=22\s+D=4374.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=1\s+C=3\s+D=259',
+        $rxOptions)
+    $goodFourth = [regex]::IsMatch($text,
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=17\s+B=\d+\s+C=3\s+D=3.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=15\s+B=3\s+C=23\s+D=791.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=\d+\s+C=24\s+D=24.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=18\s+B=18\s+C=2\s+D=4610.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=19\s+B=\d+\s+C=34\s+D=34.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=20\s+B=\d+\s+C=13\s+D=13.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=21\s+B=\d+\s+C=35\s+D=35.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+GGET\s+A=22\s+B=\d+\s+C=21\s+D=21.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+TGETS\s+A=22\s+B=22\s+C=22\s+D=5654.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+MOV\s+A=23\s+B=\d+\s+C=14\s+D=14.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=22\s+B=2\s+C=2\s+D=514.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+KSTR\s+A=23\s+B=\d+\s+C=26\s+D=26.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CAT\s+A=18\s+B=18\s+C=23\s+D=4631.*\r?\n' +
+        '^\d{4}(?:\s+line=\d+)?\s+CALL\s+A=15\s+B=1\s+C=3\s+D=259',
+        $rxOptions)
+
     $fails = New-Object System.Collections.Generic.List[string]
     if ($badFirst) {
         $fails.Add("residual bad proto241 extendtalents biliang bf.Log window #1")
@@ -2421,6 +2454,12 @@ function Test-AttackLogicExtendTalentsBiliangLogShift([string]$repoRootWsl, [str
     }
     if (-not $goodThird) {
         $fails.Add("missing corrected proto241 extendtalents biliang bf.Log window #3")
+    }
+    if ($badFourth) {
+        $fails.Add("residual bad proto241 extendtalents biliang bf.Log window #4")
+    }
+    if (-not $goodFourth) {
+        $fails.Add("missing corrected proto241 extendtalents biliang bf.Log window #4")
     }
 
     return [pscustomobject]@{

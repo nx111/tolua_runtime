@@ -1,6 +1,6 @@
 # ARM64 加载 ARM32 Bytecode 变更日志（防回归）
 
-最后更新：2026-05-08 09:45
+最后更新：2026-05-08 15:35
 维护规则：每次改 `tolua.c` 或重编插件后，必须追加一条记录并更新回归矩阵；提交前必须执行 `tools/check_arm64_fr2_log.ps1`。
 重启会话入口：见 [FR2_RESTART.md](E:/Games/work/tolua_runtime_master/docs/FR2_RESTART.md)。
 
@@ -9,6 +9,10 @@
 - 目标：在 `arm64` 上稳定加载 `arm32` LuaJIT bytecode。
 - 当前主线问题：
 1. `jygame/battle.lua`：`tmp.lua:2556 field or property Equipment does not exist`、`tmp.lua:2571 invalid arguments to method GetEquipment`（定位为 `CALL(C=2/3/4)` 在 FR2 下参数窗口右移导致 self/arg 错位）。
+
+## 0. 最新修复
+
+- 2026-05-08：修正 `AttackLogic_extendTalents` 的 `proto241 / 八百圣贤像` 残留 `bf:Log(...)` self 槽位错位，将坏窗 `A16..A22 -> A17..A23`；同步把 `proto241` 的 extendtalents bf.Log 静态门禁扩成第 4 组，覆盖这条之前漏掉的窗口。
 
 ## 2. 变更记录（按时间倒序）
 

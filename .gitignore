@@ -22,6 +22,7 @@
 
 # Executables
 *.exe
+!/luajit-2.1/build/**/*.exe
 *.out
 *.app
 *.i*86

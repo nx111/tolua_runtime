@@ -6,6 +6,7 @@
 *.pdb
 *.dll
 *.exe
+!**/build/**/*.exe
 *.manifest
 *.dmp
 *.swp

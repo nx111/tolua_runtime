@@ -31,12 +31,14 @@ for arg in "$@"; do
 done
 
 WIN64_LUAJIT_XCFLAGS="${WIN64_LUAJIT_XCFLAGS:-}"
+TARGET_DIR="x86_64"
 if [ "$ENABLE_FR2" -eq 1 ]; then
   WIN64_LUAJIT_XCFLAGS="${WIN64_LUAJIT_XCFLAGS:+$WIN64_LUAJIT_XCFLAGS }-DLUAJIT_ENABLE_GC64"
+  TARGET_DIR="x86_64/FR2"
 fi
 
 mkdir -p window/x86_64
-mkdir -p Plugins/x86_64
+mkdir -p Plugins/$TARGET_DIR
 
 if [ "$ENABLE_FR2" -eq 1 ]; then
   echo "[INFO] LuaJIT GC64: enabled (-fr2)"
@@ -73,7 +75,7 @@ x86_64-w64-mingw32-gcc -m64 -O2 -std=gnu99 $WIN64_LUAJIT_XCFLAGS -shared \
  luasocket/timeout.c \
  luasocket/udp.c \
  luasocket/wsocket.c \
- -o Plugins/x86_64/tolua.dll \
+ -o Plugins/${TARGET_DIR}/tolua.dll \
  -I./ \
  -Iluajit-2.1/src \
  -Iluasocket \
@@ -81,4 +83,9 @@ x86_64-w64-mingw32-gcc -m64 -O2 -std=gnu99 $WIN64_LUAJIT_XCFLAGS -shared \
  -Wl,--whole-archive window/x86_64/libluajit.a -Wl,--no-whole-archive -static-libgcc -static-libstdc++
 
 cd luajit-2.1
+mkdir -p build/${TARGET_DIR}
+cp src/luajit.exe build/${TARGET_DIR}/luajit.exe
 make clean
+
+echo -e "\n[MAINTAINCE] build tolua.dll success"
+

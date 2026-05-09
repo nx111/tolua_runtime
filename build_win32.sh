@@ -42,3 +42,10 @@ i686-w64-mingw32-gcc -m32 -O2 -std=gnu99 -shared \
 	-Iluasocket \
 	-lws2_32 \
 	-Wl,--whole-archive window/x86/libluajit.a -Wl,--no-whole-archive -static-libgcc -static-libstdc++
+
+cd luajit-2.1
+mkdir -p build/x86
+cp src/luajit.exe build/x86/luajit.exe
+make clean
+
+echo -e "\n[MAINTAINCE] build tolua.dll success"

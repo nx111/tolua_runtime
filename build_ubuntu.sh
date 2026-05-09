@@ -32,13 +32,15 @@ for arg in "$@"; do
 done
 
 UBUNTU_LUAJIT_XCFLAGS="${UBUNTU_LUAJIT_XCFLAGS:-}"
+TARGET_DIR="ubuntu"
 if [ "$ENABLE_FR2" -eq 1 ]; then
   UBUNTU_LUAJIT_XCFLAGS="${UBUNTU_LUAJIT_XCFLAGS:+$UBUNTU_LUAJIT_XCFLAGS }-DLUAJIT_ENABLE_GC64"
+  TARGET_DIR="ubuntu/FR2"
   echo "[INFO] LuaJIT GC64: enabled (-fr2)"
 fi
 
 mkdir -p ubuntu
-mkdir -p Plugins/ubuntu
+mkdir -p Plugins/$TARGET_DIR
 
 cd luajit-2.1
 make clean
@@ -75,7 +77,7 @@ gcc -m64 -O2 -std=gnu99 $UBUNTU_LUAJIT_XCFLAGS -shared \
  luasocket/udp.c \
  luasocket/usocket.c \
  -fPIC\
- -o Plugins/ubuntu/libtolua.so \
+ -o Plugins/${TARGET_DIR}/libtolua.so \
  -I./ \
  -Iluajit-2.1/src \
  -Iluasocket \
